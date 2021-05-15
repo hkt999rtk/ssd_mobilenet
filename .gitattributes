@@ -1,0 +1,4 @@
+deploy/yolov4-416-fp32/model.tflite filter=lfs diff=lfs merge=lfs -text
+deploy/yolov4-416-fp16/model.tflite filter=lfs diff=lfs merge=lfs -text
+deploy/yolov3-416-int8/model.tflite filter=lfs diff=lfs merge=lfs -text
+*.tflite filter=lfs diff=lfs merge=lfs -text
