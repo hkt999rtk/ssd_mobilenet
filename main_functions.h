@@ -26,9 +26,9 @@ extern "C" {
 void setup();
 
 // Runs one iteration of data gathering and inference. This should be called
-// repeatedly from the application code. The name needs to be loop() for Arduino
+// repeatedly from the application code. The name needs to be ssd_mobilenet() for Arduino
 // compatibility.
-void loop();
+void ssd_mobilenet(uint8_t *pData);
 
 #ifdef __cplusplus
 }

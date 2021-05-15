@@ -32,10 +32,10 @@ extern "C" void setup()
 	}
 }
 
-extern "C" void loop()
+extern "C" void ssd_mobilenet(uint8_t *pData)
 {
 	uint8_t *data = interpreter->typed_input_tensor<uint8_t>(0);
-	memcpy(data, test_image_data, test_image_data_len);
+	memcpy(data, pData, 300*300*3);
 
 	interpreter->Invoke();
 

@@ -1,17 +1,24 @@
 {
-  "configurations": [
-    {
-      "name": "Tensorflow",
-      "intelliSenseMode": "gcc-x64",
-      "includePath": ["${workspaceFolder}", "~/work/tensorflow", "/usr/include/opencv4"],
-      "cStandard": "c11",
-      "cppStandard": "c++17",
-      "browse": {
-        "path": ["${workspaceFolder}"],
-        "limitSymbolsToIncludedHeaders": true,
-        "databaseFilename": ""
-      }
-    }
-  ],
-  "version": 4
+    "configurations": [
+        {
+            "name": "Tensorflow",
+            "intelliSenseMode": "gcc-x64",
+            "includePath": [
+                "${workspaceFolder}",
+                "~/work/tensorflow",
+                "/usr/include/opencv4"
+            ],
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": ""
+            },
+            "configurationProvider": "go2sh.cmake-integration"
+        }
+    ],
+    "version": 4
 }
