@@ -29,7 +29,7 @@ target_sources(ssd_mobilenet_detection
   ${CMAKE_CURRENT_LIST_DIR}/main_functions.cpp
   ${CMAKE_CURRENT_LIST_DIR}/model_settings.h
   ${CMAKE_CURRENT_LIST_DIR}/model_settings.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/mstick.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/util.cpp
   ${CMAKE_CURRENT_LIST_DIR}/nms.h
   ${CMAKE_CURRENT_LIST_DIR}/nms.cpp
 )
