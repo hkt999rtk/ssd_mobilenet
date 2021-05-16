@@ -13,25 +13,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_MAIN_FUNCTIONS_H_
-#define TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_MAIN_FUNCTIONS_H_
+#ifndef SSD_MOBILENET_API_H_
+#define SSD_MOBILENET_API_H_
 
-// Expose a C friendly interface for main functions.
-#ifdef __cplusplus
-extern "C" {
+#include "nms.h"
+
+void ssd_mobilenet_setup();
+void ssd_mobilenet_detect(uint8_t *pData, NmsCb &cb);
+
 #endif
-
-// Initializes all data needed for the example. The name is important, and needs
-// to be setup() for Arduino compatibility.
-void setup();
-
-// Runs one iteration of data gathering and inference. This should be called
-// repeatedly from the application code. The name needs to be ssd_mobilenet() for Arduino
-// compatibility.
-void ssd_mobilenet(uint8_t *pData);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif  // TENSORFLOW_LITE_MICRO_EXAMPLES_PERSON_DETECTION_MAIN_FUNCTIONS_H_

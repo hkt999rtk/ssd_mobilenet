@@ -3,7 +3,12 @@ cmake_minimum_required(VERSION 3.12)
 project(ssd_mobilenet_detection C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_BUILD_TYPE DEBUG)
+
+if(NOT CMAKE_BUILD_TYPE)
+	message(STATUS "Setting build type to Debug, for debug builds use"
+		"'-DCMAKE_BUILD_TYPE=Release'.")
+	set(CMAKE_BUILD_TYPE "Debug")
+endif()
 
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
@@ -24,10 +29,9 @@ target_sources(ssd_mobilenet_detection
   ${CMAKE_CURRENT_LIST_DIR}/main_functions.cpp
   ${CMAKE_CURRENT_LIST_DIR}/model_settings.h
   ${CMAKE_CURRENT_LIST_DIR}/model_settings.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/test-image.h
+  ${CMAKE_CURRENT_LIST_DIR}/mstick.cpp
   ${CMAKE_CURRENT_LIST_DIR}/nms.h
   ${CMAKE_CURRENT_LIST_DIR}/nms.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/model/test-image.cpp
 )
 
 target_link_directories(

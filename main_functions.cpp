@@ -3,13 +3,14 @@
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
 #include "tensorflow/lite/tools/gen_op_registration.h"
-#include "test-image.h"
+#include "main_functions.h"
 #include "nms.h"
+#include "model_settings.h"
 
 extern const char* kCategoryLabels[];
 static std::unique_ptr<tflite::Interpreter> interpreter;
 
-extern "C" void setup()
+void ssd_mobilenet_setup()
 {
 	tflite::ErrorReporter* error_reporter = nullptr;
 	static tflite::StderrReporter my_error_reporter;
@@ -32,10 +33,10 @@ extern "C" void setup()
 	}
 }
 
-extern "C" void ssd_mobilenet(uint8_t *pData)
+void ssd_mobilenet_detect(uint8_t *pData, NmsCb &cb)
 {
 	uint8_t *data = interpreter->typed_input_tensor<uint8_t>(0);
-	memcpy(data, pData, 300*300*3);
+	memcpy(data, pData, kMaxImageSize);
 
 	interpreter->Invoke();
 
@@ -63,6 +64,6 @@ extern "C" void ssd_mobilenet(uint8_t *pData)
 	}
 
 	#define OVERLAY_THRESHOLD  50
-	nms.Go(OVERLAY_THRESHOLD); /* overlay threshold */
+	nms.Go(OVERLAY_THRESHOLD, cb); /* overlay threshold */
 }
 

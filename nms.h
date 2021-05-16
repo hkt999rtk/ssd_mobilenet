@@ -1,6 +1,8 @@
 #ifndef _NMS_ALGORITHM_H_
 #define _NMS_ALGORITHM_H_
 
+#include "nms.h"
+
 class BoundingBox {
     public:
         int minX;
@@ -28,6 +30,15 @@ class BoundingBox {
 
 #define MAX_BOXES   10
 
+class NmsCb {
+    public:
+        NmsCb() {}
+        virtual ~NmsCb() {}
+
+    public:
+        virtual int callback(BoundingBox &boundingBox) = 0;
+};
+
 class ImageClass {
     protected:
         BoundingBox boxArray[MAX_BOXES];
@@ -44,7 +55,7 @@ class ImageClass {
         inline int GetClassId() { return classId; }
         inline void SetClassId(int id) { classId = id; }
 
-        void Dump();
+        void Dump(NmsCb &cb);
 
     public:
         void SortBoxes();
@@ -64,7 +75,7 @@ class NmsPostProcess {
 
     public:
         int AddBoundingBox( BoundingBox &box );
-        void Go(int overlayThreshold);
+        void Go(int overlayThreshold, NmsCb &cb);
 };
 
 #endif

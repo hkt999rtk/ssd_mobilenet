@@ -102,12 +102,11 @@ void ImageClass::Go(int overlayThreshold)
     }
 }
 
-void ImageClass::Dump()
+void ImageClass::Dump(NmsCb &cb)
 {
     for (int i=0; i<numPicked; i++) {
         BoundingBox b = pickArray[i];
-        printf("class=%d (%s), score=%d%%, box=(%d,%d)-(%d,%d)\n",
-            classId, kCategoryLabels[classId], b.score, b.minX, b.minY, b.maxX, b.maxY);
+        cb.callback(b);
     }
 }
 
@@ -130,10 +129,10 @@ int NmsPostProcess::AddBoundingBox( BoundingBox &box )
     return 0;
 }
 
-void NmsPostProcess::Go(int overlayThreshold)
+void NmsPostProcess::Go(int overlayThreshold, NmsCb &cb)
 {
     for (int i=0; i<numClasses; i++) {
         imageClass[i].Go(overlayThreshold);
-        imageClass[i].Dump();
+        imageClass[i].Dump(cb);
     }
 }

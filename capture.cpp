@@ -5,7 +5,6 @@
 
 using namespace std;
 using namespace cv;
-extern int32_t get_current_ticks();
 
 static bool m_enable = true;
 static bool m_running = false;
@@ -18,12 +17,14 @@ static void *capture_thread(void *param)
 	VideoCapture capture( uri );
 
 	cout << "opening video device " << uri << endl;
-	assert(capture.isOpened());
+	bool open = capture.isOpened();
+	assert(open);
 	cout << "start capturing..." << endl;
 	
 	m_running = true;
 	while ( m_enable ) {
-		assert(capture.read(frame));
+		bool ready = capture.read(frame);
+		assert(ready);
 	}
 	capture.release();
 	m_running = false;
