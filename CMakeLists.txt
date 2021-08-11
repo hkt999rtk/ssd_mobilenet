@@ -19,6 +19,7 @@ target_include_directories(ssd_mobilenet_detection
   PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/.
   ${CMAKE_CURRENT_LIST_DIR}/../tensorflow
+  ${CMAKE_CURRENT_LIST_DIR}/../tensorflow/tensorflow/lite/examples/minimal/build/flatbuffers/include
 )
 
 target_sources(ssd_mobilenet_detection
@@ -53,5 +54,6 @@ target_link_libraries(
   fft2d_fftsg
   fft2d_fftsg2d
   ruy
+  farmhash
   ${OpenCV_LIBS}
 )
