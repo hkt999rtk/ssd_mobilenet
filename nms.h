@@ -1,7 +1,4 @@
-#ifndef _NMS_ALGORITHM_H_
-#define _NMS_ALGORITHM_H_
-
-#include "nms.h"
+#pragma once
 
 class BoundingBox {
     public:
@@ -16,7 +13,7 @@ class BoundingBox {
         BoundingBox() {} // default constructor
         BoundingBox(int minX, int minY, int maxX, int maxY, int score, int classId);
         BoundingBox( BoundingBox &c) { *this = c; }
-        virtual ~BoundingBox() {}
+        ~BoundingBox() {}
         BoundingBox &operator= (BoundingBox &box);
         BoundingBox &operator*= (BoundingBox &box);
         BoundingBox &operator+= (BoundingBox &box);
@@ -25,10 +22,15 @@ class BoundingBox {
         inline int GetClassId() { return classId; }
 
         int Area();
+        void Delete();
+        int IsDeleted();
+        void Print();
         int IoU(BoundingBox &input); /* 100% ratio */
 };
 
-#define MAX_BOXES   10
+#define MAX_BOXES       (20)
+#define MAX_CLASSES     (90)
+#define IOU_THRESHOLD   (50)
 
 class NmsCb {
     public:
@@ -49,7 +51,7 @@ class ImageClass {
 
     public:
         ImageClass() { numBox = 0; numPicked = 0; classId = -1; }
-        virtual ~ImageClass() {}
+        ~ImageClass() {}
         int AddBoundingBox( BoundingBox &box );
 
         inline int GetClassId() { return classId; }
@@ -66,7 +68,7 @@ class ImageClass {
 
 class NmsPostProcess {
     protected:
-        ImageClass imageClass[MAX_BOXES];
+        ImageClass imageClass[MAX_CLASSES];
         int numClasses;
 
     public:
@@ -77,6 +79,4 @@ class NmsPostProcess {
         int AddBoundingBox( BoundingBox &box );
         void Go(int overlayThreshold, NmsCb &cb);
 };
-
-#endif
 

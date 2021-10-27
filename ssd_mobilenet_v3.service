@@ -1,0 +1,15 @@
+[Unit]
+Description=realtek-ai ssd_mobilenet_v3
+After=network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/linebot
+PIDFile=/srv/linebot/ssd_mobilenet_v3.pid
+ExecStart=/srv/linebot/ssd_mobilenet_detection
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=true
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
