@@ -12,7 +12,7 @@ class BoundingBox {
     public:
         BoundingBox() {} // default constructor
         BoundingBox(int minX, int minY, int maxX, int maxY, int score, int classId);
-        BoundingBox( BoundingBox &c) { *this = c; }
+        BoundingBox(const BoundingBox &c) { minX = c.minX; minY = c.minY; maxX = c.maxX; maxY = c.maxY; score = c.score; classId = c.classId; }
         ~BoundingBox() {}
         BoundingBox &operator= (BoundingBox &box);
         BoundingBox &operator*= (BoundingBox &box);

@@ -55,34 +55,61 @@ void ssd_mobilenet_setup()
 	}
 }
 
+#define MAX_NUM_BOX 100
 class NmsProc : public NmsCb
 {
 	protected:
 		Mat *pImage;
+		int numBox;
+		vector<BoundingBox> bboxVec;
 
 	public:
-		NmsProc(Mat *img) { pImage = img; }
+		NmsProc(Mat *img) { pImage = img; numBox = 0; }
 		virtual ~NmsProc() {}
 
 	public:
 		virtual int callback(BoundingBox &boundingBox);
+		void addBox(BoundingBox bbox);
+		string packJson();
 };
+
+void NmsProc::addBox(BoundingBox bbox)
+{
+	bboxVec.push_back(static_cast<BoundingBox>(bbox));
+}
 
 int NmsProc::callback(BoundingBox &bb)
 {
 	char s[128];
 	Rect rect(bb.minX, bb.minY, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
 	rectangle(*pImage, rect, (180,105,255), 6);
-	sprintf(s, "%s (%d%%)", kCategoryLabels[bb.classId], bb.score);
-	putText(*pImage, s, Point(bb.minX, bb.minY-5), FONT_HERSHEY_SIMPLEX, 3, (180,105,255), 1.5);
-	clog << "callback minX=" << bb.minX << ", minY=" << bb.minY << ", maxX=" << bb.maxX 
-		<< ", maxY=" << bb.maxY << ", score=" << bb.score << ", class=" << bb.classId <<
-		", name=" << kCategoryLabels[bb.classId] << endl;
+	snprintf(s, sizeof(s), "%s (%d%%)", kCategoryLabels[bb.classId], bb.score);
+	putText(*pImage, s, Point(bb.minX, bb.minY-5),
+		FONT_HERSHEY_SIMPLEX, 3, (180,105,255), 1.5);
 
+	addBox(bb);
 	return 0;
 }
 
-void ssd_mobilenet_detect(Mat &img, const string &output)
+string NmsProc::packJson()
+{
+	ostringstream s;
+	s << "[";
+	for (int i=0; i<bboxVec.size(); i++) {
+		BoundingBox bb = bboxVec[i];
+		s << "{\"minx\":" << bb.minX << ", \"maxx\":" << bb.maxX <<
+		     ", \"miny\":" << bb.minY << ", \"maxy\":" << bb.maxY <<
+			 ", \"score\":" << bb.score << ", \"class\":\"" << kCategoryLabels[bb.classId] << "\"}";
+		if (i<bboxVec.size()-1) {
+			s << ",";
+		}
+	}
+	s << "]";
+
+	return s.str();
+}
+
+string ssd_mobilenet_detect(Mat &img, const string &output)
 {
 	Mat dstImg;
 
@@ -118,9 +145,12 @@ void ssd_mobilenet_detect(Mat &img, const string &output)
 	}
 	NmsProc nmsCall(&img);
 	nms.Go(50, nmsCall); // overlay threshold
+	string json = nmsCall.packJson();
 
 	auto rc = imwrite(output, img);
-	clog << "write image to " << output << " rc=" << rc << endl;
+	clog << "write image to " << output << endl;
+
+	return json;
 }
 
 class MyCgiTest : public MyFastCgi
@@ -129,9 +159,10 @@ class MyCgiTest : public MyFastCgi
         int run(QueryString &qs, ostream &os);
 };
 
-void returnValue(int ms, ostream &os)
+void returnValue(string &result, int ms, ostream &os)
 {
-	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms << "}";
+	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms
+	   << ",\"detection\":" << result << "}";
 }
 
 void returnFail(const char *reason, ostream &os)
@@ -154,8 +185,8 @@ int MyCgiTest::run(QueryString &qs, ostream &os)
 			}
 			auto po = qs.getParam("output");
 			int start = get_current_ticks();
-   			ssd_mobilenet_detect(img, po->firstValue());
-			returnValue( get_current_ticks() - start, os );
+   			string result = ssd_mobilenet_detect(img, po->firstValue());
+			returnValue( result, get_current_ticks() - start, os );
 		} else {
 			returnFail("error: need input and output parameter", os);
 			return -1;
@@ -173,11 +204,11 @@ int main(int argc, char **argv)
 {
 	ssd_mobilenet_setup();
 
-	HttpServer server(".");
+	HttpServer server(".", 8120);
     MyCgiTest mycgi;
     
     server.registerMyCgi("detect", mycgi);
-	server.run(2);
+	server.run(2); // acceptance for 2 threads
 
 	return 0;
 }
