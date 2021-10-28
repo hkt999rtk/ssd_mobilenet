@@ -159,9 +159,10 @@ class MyCgiTest : public MyFastCgi
         int run(QueryString &qs, ostream &os);
 };
 
-void returnValue(string &result, int ms, ostream &os)
+void returnValue(int width, int height, string &result, int ms, ostream &os)
 {
 	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms
+	   << ",\"width\":" << width << ",\"height\":" << height
 	   << ",\"detection\":" << result << "}";
 }
 
@@ -186,7 +187,7 @@ int MyCgiTest::run(QueryString &qs, ostream &os)
 			auto po = qs.getParam("output");
 			int start = get_current_ticks();
    			string result = ssd_mobilenet_detect(img, po->firstValue());
-			returnValue( result, get_current_ticks() - start, os );
+			returnValue(img.cols, img.rows, result, get_current_ticks() - start, os );
 		} else {
 			returnFail("error: need input and output parameter", os);
 			return -1;
