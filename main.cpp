@@ -82,10 +82,10 @@ int NmsProc::callback(BoundingBox &bb)
 {
 	char s[128];
 	Rect rect(bb.minX, bb.minY, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
-	rectangle(*pImage, rect, (180,105,255), 6);
+	rectangle(*pImage, rect, Scalar(180,105,255), 6);
 	snprintf(s, sizeof(s), "%s (%d%%)", kCategoryLabels[bb.classId], bb.score);
 	putText(*pImage, s, Point(bb.minX, bb.minY-5),
-		FONT_HERSHEY_SIMPLEX, 3, (180,105,255), 1.5);
+		FONT_HERSHEY_SIMPLEX, 1, Scalar(180,105,255), 1.5);
 
 	addBox(bb);
 	return 0;
@@ -204,7 +204,7 @@ int main(int argc, char **argv)
 {
 	ssd_mobilenet_setup();
 
-	HttpServer server(".", 8120);
+	HttpServer server("."); //, 8120);
     MyCgiTest mycgi;
     
     server.registerMyCgi("detect", mycgi);
