@@ -31,11 +31,6 @@ const char* kCategoryLabels[kCategoryCount] = {
   "sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
 };
 
-Scalar color[] = {
-	(0,255,255),
-	(255,0,255),
-	(255,255,0)
-};
 
 static std::unique_ptr<tflite::Interpreter> interpreter;
 void ssd_mobilenet_setup()
@@ -76,11 +71,10 @@ class NmsProc : public NmsCb
 int NmsProc::callback(BoundingBox &bb)
 {
 	char s[128];
-	Scalar c = color[bb.classId%3];
 	Rect rect(bb.minX, bb.minY, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
-	rectangle(*pImage, rect, c, 6);
+	rectangle(*pImage, rect, (180,105,255), 6);
 	sprintf(s, "%s (%d%%)", kCategoryLabels[bb.classId], bb.score);
-	putText(*pImage, s, Point(bb.minX, bb.minY-5), FONT_HERSHEY_SIMPLEX, 3, c, 1.5);
+	putText(*pImage, s, Point(bb.minX, bb.minY-5), FONT_HERSHEY_SIMPLEX, 3, (180,105,255), 1.5);
 	clog << "callback minX=" << bb.minX << ", minY=" << bb.minY << ", maxX=" << bb.maxX 
 		<< ", maxY=" << bb.maxY << ", score=" << bb.score << ", class=" << bb.classId <<
 		", name=" << kCategoryLabels[bb.classId] << endl;
