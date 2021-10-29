@@ -9,6 +9,10 @@
 #include "nms.h"
 #include "util.h"
 
+#define INPUT_ORIGINAL	0
+#define INPUT_CROP		1
+#define INPUT_PADDING	2
+
 using namespace std;
 using namespace cv;
 
@@ -18,6 +22,7 @@ constexpr int kNumChannels = 3;
 constexpr int kMaxImageSize = kNumCols * kNumRows * kNumChannels;
 constexpr int kCategoryCount = 90;
 extern const char* kCategoryLabels[kCategoryCount];
+
 
 const char* kCategoryLabels[kCategoryCount] = {
   "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", " boat", "traffic light",
@@ -61,10 +66,12 @@ class NmsProc : public NmsCb
 	protected:
 		Mat *pImage;
 		int numBox;
+		int x_offset;
+		int y_offset;
 		vector<BoundingBox> bboxVec;
 
 	public:
-		NmsProc(Mat *img) { pImage = img; numBox = 0; }
+		NmsProc(Mat *img, int x_off, int y_off) { pImage = img; numBox = 0; x_offset = x_off; y_offset = y_off; }
 		virtual ~NmsProc() {}
 
 	public:
@@ -80,12 +87,15 @@ void NmsProc::addBox(BoundingBox bbox)
 
 int NmsProc::callback(BoundingBox &bb)
 {
+	Rect rect(bb.minX-x_offset, bb.minY-y_offset, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
+	rectangle(*pImage, rect, Scalar(180,105,255), 3);
+
+#if 0
 	char s[128];
-	Rect rect(bb.minX, bb.minY, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
-	rectangle(*pImage, rect, Scalar(180,105,255), 6);
 	snprintf(s, sizeof(s), "%s (%d%%)", kCategoryLabels[bb.classId], bb.score);
 	putText(*pImage, s, Point(bb.minX, bb.minY-5),
 		FONT_HERSHEY_SIMPLEX, 1, Scalar(180,105,255), 1.5);
+#endif
 
 	addBox(bb);
 	return 0;
@@ -109,21 +119,54 @@ string NmsProc::packJson()
 	return s.str();
 }
 
-string ssd_mobilenet_detect(Mat &img, const string &output)
+static int image_mode = INPUT_PADDING;
+string ssd_mobilenet_detect(Mat &img, const string &output,
+	int &width, int &height)
 {
-	Mat dstImg;
+	Mat dstImg, outputImg;
+	float x_ratio, y_ratio;
+	int x_offset = 0, y_offset = 0;
 
-	Rect cropRect;
-	if (img.cols >= img.rows) {
-		cropRect = Rect((img.cols - img.rows)/2, 0, img.rows, img.rows);
-	} else {
-		cropRect = Rect(0, (img.rows - img.cols)/2, img.cols, img.cols);
+	switch (image_mode) {
+		case INPUT_ORIGINAL:
+			resize(img, dstImg, Size(kNumCols, kNumRows));
+			x_ratio = (float)img.cols / (float)kNumCols;
+			y_ratio = (float)img.rows / (float)kNumRows;
+			break;
+
+		case INPUT_CROP: {
+				Rect cropRect;
+				if (img.cols >= img.rows) {
+					cropRect = Rect((img.cols - img.rows)/2, 0, img.rows, img.rows);
+				} else {
+					cropRect = Rect(0, (img.rows - img.cols)/2, img.cols, img.cols);
+				}
+
+				outputImg = Mat(img, cropRect);
+				x_ratio = (float)outputImg.cols / (float)kNumCols;
+				y_ratio = (float)outputImg.rows / (float)kNumRows;
+				resize(outputImg, dstImg, Size(kNumCols, kNumRows));
+			}
+			break;
+
+		case INPUT_PADDING: {
+				Mat dst;
+				if (img.cols >= img.rows) {
+					dst = Mat(img.cols,  img.cols, CV_8UC3, Scalar(0,0,0));
+					y_offset = (img.cols - img.rows)/2;
+					img.copyTo(dst.rowRange(y_offset, img.rows+y_offset).colRange(0, img.cols));
+				} else {
+					dst = Mat(img.rows,  img.rows, CV_8UC3, Scalar(0,0,0));
+					x_offset = (img.rows - img.cols)/2;
+					img.copyTo(dst.rowRange(0, img.rows).colRange(x_offset, img.cols+x_offset));
+				}
+				x_ratio = (float)dst.cols / (float)kNumCols;
+				y_ratio = (float)dst.rows / (float)kNumRows;
+				resize(dst, dstImg, Size(kNumCols, kNumRows));
+				outputImg = img;
+			}
+			break;
 	}
-	Mat squareImg(img, cropRect);
-	float x_ratio = (float)squareImg.cols / (float)kNumCols;
-	float y_ratio = (float)squareImg.rows / (float)kNumRows;
-
-    resize(squareImg, dstImg, Size(kNumCols, kNumRows));
     cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
 
 	uint8_t *data = interpreter->typed_input_tensor<uint8_t>(0);
@@ -151,12 +194,14 @@ string ssd_mobilenet_detect(Mat &img, const string &output)
 			nms.AddBoundingBox(bb);
 		}
 	}
-	NmsProc nmsCall(&squareImg);
+	NmsProc nmsCall(&outputImg, x_offset, y_offset);
 	nms.Go(50, nmsCall); // overlay threshold
 	string json = nmsCall.packJson();
 
-	auto rc = imwrite(output, squareImg);
+	auto rc = imwrite(output, outputImg);
 	clog << "write image to " << output << endl;
+	width = outputImg.cols;
+	height = outputImg.rows;
 
 	return json;
 }
@@ -194,8 +239,9 @@ int MyCgiTest::run(QueryString &qs, ostream &os)
 			}
 			auto po = qs.getParam("output");
 			int start = get_current_ticks();
-   			string result = ssd_mobilenet_detect(img, po->firstValue());
-			returnValue(img.cols, img.rows, result, get_current_ticks() - start, os );
+			int width, height;
+   			string result = ssd_mobilenet_detect(img, po->firstValue(), width, height);
+			returnValue(width, height, result, get_current_ticks() - start, os );
 		} else {
 			returnFail("error: need input and output parameter", os);
 			return -1;
@@ -213,7 +259,7 @@ int main(int argc, char **argv)
 {
 	ssd_mobilenet_setup();
 
-	HttpServer server(".", 8120);
+	HttpServer server(".", 8110);
     MyCgiTest mycgi;
     
     server.registerMyCgi("detect", mycgi);
