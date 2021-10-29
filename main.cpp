@@ -113,9 +113,17 @@ string ssd_mobilenet_detect(Mat &img, const string &output)
 {
 	Mat dstImg;
 
-	float x_ratio = (float)img.cols / (float)kNumCols;
-	float y_ratio = (float)img.rows / (float)kNumRows;
-    resize(img, dstImg, Size(kNumCols, kNumRows));
+	Rect cropRect;
+	if (img.cols >= img.rows) {
+		cropRect = Rect((img.cols - img.rows)/2, 0, img.rows, img.rows);
+	} else {
+		cropRect = Rect(0, (img.rows - img.cols)/2, img.cols, img.cols);
+	}
+	Mat squareImg(img, cropRect);
+	float x_ratio = (float)squareImg.cols / (float)kNumCols;
+	float y_ratio = (float)squareImg.rows / (float)kNumRows;
+
+    resize(squareImg, dstImg, Size(kNumCols, kNumRows));
     cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
 
 	uint8_t *data = interpreter->typed_input_tensor<uint8_t>(0);
@@ -143,11 +151,11 @@ string ssd_mobilenet_detect(Mat &img, const string &output)
 			nms.AddBoundingBox(bb);
 		}
 	}
-	NmsProc nmsCall(&img);
+	NmsProc nmsCall(&squareImg);
 	nms.Go(50, nmsCall); // overlay threshold
 	string json = nmsCall.packJson();
 
-	auto rc = imwrite(output, img);
+	auto rc = imwrite(output, squareImg);
 	clog << "write image to " << output << endl;
 
 	return json;
@@ -205,7 +213,7 @@ int main(int argc, char **argv)
 {
 	ssd_mobilenet_setup();
 
-	HttpServer server("."); //, 8120);
+	HttpServer server(".", 8120);
     MyCgiTest mycgi;
     
     server.registerMyCgi("detect", mycgi);
