@@ -206,11 +206,20 @@ string ssd_mobilenet_detect(Mat &img, const string &output,
 	return json;
 }
 
-class MyCgiTest : public MyFastCgi
+class DetectCGI : public MyFastCgi
 {
+	protected:
+		pthread_mutex_t m_mutex;
+	public:
+		DetectCGI();
     public:
         int run(QueryString &qs, ostream &os);
 };
+
+DetectCGI::DetectCGI()
+{
+	pthread_mutex_init(&m_mutex);
+}
 
 void returnValue(int width, int height, string &result, int ms, ostream &os)
 {
@@ -225,7 +234,7 @@ void returnFail(const char *reason, ostream &os)
 	os << "{\"status\":\"fail\", \"reason\":\"" << reason << "\"}";
 }
 
-int MyCgiTest::run(QueryString &qs, ostream &os)
+int DetectCGI::run(QueryString &qs, ostream &os)
 {
     os << "Content-Type: application/json" << endl << endl;
 	if (qs.numParams()>=1) {
@@ -240,7 +249,9 @@ int MyCgiTest::run(QueryString &qs, ostream &os)
 			auto po = qs.getParam("output");
 			int start = get_current_ticks();
 			int width, height;
+			pthread_mutex_lock(&m_mutex);
    			string result = ssd_mobilenet_detect(img, po->firstValue(), width, height);
+			pthread_mutex_unlock(&m_mutex);
 			returnValue(width, height, result, get_current_ticks() - start, os );
 		} else {
 			returnFail("error: need input and output parameter", os);
@@ -260,10 +271,10 @@ int main(int argc, char **argv)
 	ssd_mobilenet_setup();
 
 	HttpServer server(".", 8110);
-    MyCgiTest mycgi;
+    DetectCGI mycgi;
     
-    server.registerMyCgi("detect", mycgi);
-	server.run(2); // acceptance for 2 threads
+    server.registerCgi("detect", mycgi);
+	server.run(3); // acceptance 3 current request
 
 	return 0;
 }
