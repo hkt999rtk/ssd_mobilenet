@@ -250,8 +250,27 @@ string ODInference::detect(Mat &img, const string &output,
 	}
     cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
 
-	uint8_t *data = interpreter->typed_input_tensor<uint8_t>(0);
-	memcpy(data, dstImg.data, kMaxImageSize);
+	int8_t *int8_data = 0;
+	uint8_t *uint8_data = 0;
+	float_t *float_data = 0;
+	uint8_data = interpreter->typed_input_tensor<uint8_t>(0);
+	int8_data = interpreter->typed_input_tensor<int8_t>(0);
+	float_data = interpreter->typed_input_tensor<float_t>(0);
+	uint8_t *in = dstImg.data;
+
+	if (uint8_data!=0) {
+		memcpy(uint8_data, in, kMaxImageSize);
+	} else if (int8_data!=0) {
+		int count = kMaxImageSize;
+		while (count-->0) {
+			*int8_data++ = (int8_t)((int)(*in++)-128);
+		}
+	} else if (float_data!=0) {
+		int count = kMaxImageSize;
+		while (count-->0) {
+			*float_data++ = ((float)(*in++)) / 256.0;
+		}
+	}
 
 	interpreter->Invoke();
 
@@ -354,7 +373,6 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 			}
 			auto po = qs.getParam("output");
 			int start = get_current_ticks();
-			int width, height;
 			string modelName = "default";
 			if (qs.hasParam("model")) {
 				auto pi = qs.getParam("model");
@@ -362,6 +380,7 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 			}
 			ODInference *infEngine = m_im->findOd(modelName);
 			if (infEngine) {
+				int width = 0, height = 0;
 				string result = infEngine->detect(img, po->firstValue(), width, height);
 				returnValue(width, height, result, get_current_ticks() - start, os, 0);
 			}
@@ -408,15 +427,15 @@ int main(int argc, char **argv)
 		"???", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster",
 		"sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"};
 
-	MobileNetSSD ssd1(320, 320, 3, "ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite", 90, cocoLabels);
-	ssd1.modelSetup();
+	//MobileNetSSD ssd1(320, 320, 3, "ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite", 90, cocoLabels);
+	//ssd1.modelSetup();
 	MobileNetSSD ssd2(32, 300, 3, "ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/model.tflite", 90, cocoLabels);
 	ssd2.modelSetup();
 
 	HttpServer server(".", 8120);
 	InferenceManager im;
 	im.add(&ssd2);
-	im.add(&ssd1);
+	//im.add(&ssd1);
 
     DetectCGI detectCGI(&im);
 	NameCGI nameCGI(&im);
