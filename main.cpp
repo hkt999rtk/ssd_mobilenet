@@ -16,41 +16,116 @@
 using namespace std;
 using namespace cv;
 
-constexpr int kNumCols = 320;
-constexpr int kNumRows = 320;
-constexpr int kNumChannels = 3;
-constexpr int kMaxImageSize = kNumCols * kNumRows * kNumChannels;
-constexpr int kCategoryCount = 90;
-extern const char* kCategoryLabels[kCategoryCount];
+class ODInference
+{
+	protected:
+		string kModelName;
+		int kNumCols;
+		int kNumRows;
+		int kNumChannels;
+		int kMaxImageSize;
+		int kImageMode;
+		int kCategoryCount;
+		const char **kCategoryLabels;
+		std::unique_ptr<tflite::Interpreter> interpreter;
+		tflite::StderrReporter my_error_reporter;
+		std::unique_ptr<tflite::FlatBufferModel> model;
+		tflite::ops::builtin::BuiltinOpResolver resolver;
 
+	public:
+		ODInference(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels);
+		virtual ~ODInference() {}
 
-const char* kCategoryLabels[kCategoryCount] = {
-  "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", " boat", "traffic light",
-  "fire hydrant", "???", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep",
-  "cow", "elephant", "bear", "zebra", "giraffe", "???", "backpack", "umbrella", "???", "???",
-  "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-  "skateboard", "surfboard", "tennis racket", "bottle", "???", "wine glass", "cup", "fork", "knife", "spoon",
-  "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut",
-  "cake", "chair", "couch", "potted plant", "bed", "???", "dining table", "???", "???", "toilet",
-  "???", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster",
-  "sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+		void modelSetup();
+		string &getName() { return kModelName; }
+		string detect(Mat &img, const string &output, int &width, int &height);
+		virtual string getClassName(int classId);
 };
 
+class MobileNetSSD : public ODInference
+{
+	public:
+		MobileNetSSD(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels);
+		~MobileNetSSD() {}
+};
 
-static std::unique_ptr<tflite::Interpreter> interpreter;
-void ssd_mobilenet_setup()
+class InferenceManager
+{
+	public:
+		vector<ODInference *> vec;
+
+	public:
+		InferenceManager();
+		virtual ~InferenceManager();
+
+	public:
+		void add(ODInference *od);
+		ODInference *findOd(string name);
+		ODInference *getDefault();
+};
+
+InferenceManager::InferenceManager()
+{
+}
+
+InferenceManager::~InferenceManager()
+{
+}
+
+void InferenceManager::add(ODInference *od)
+{
+	vec.push_back(od);
+}
+
+ODInference *InferenceManager::findOd(string name)
+{
+	if (vec.size()>=1) {
+		if (name=="default")
+			return vec[0];
+
+		for (int i=0; i<vec.size(); i++) {
+			if (name == vec[i]->getName()) {
+				return vec[i];
+			}
+		}
+	}
+
+	return NULL;
+}
+
+ODInference::ODInference(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels)
+{
+	kModelName = modelName;
+	kNumCols = iWidth;
+	kNumRows = iHeight;
+	kNumChannels = iNumCh;
+	kMaxImageSize = kNumCols * kNumRows * kNumChannels;
+	kCategoryCount = numCategory;
+	kCategoryLabels = labels;
+}
+
+string ODInference::getClassName(int classId)
+{
+	return string(kCategoryLabels[classId]);
+}
+
+MobileNetSSD::MobileNetSSD(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels):
+	ODInference(iWidth, iHeight, iNumCh, modelName, numCategory, labels)
+{
+	kImageMode = INPUT_PADDING;
+}
+
+void ODInference::modelSetup()
 {
 	tflite::ErrorReporter* error_reporter = nullptr;
-	static tflite::StderrReporter my_error_reporter;
 	error_reporter = &my_error_reporter;
-	static std::unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile("ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite");
+	model = tflite::FlatBufferModel::BuildFromFile(kModelName.c_str());
 
 	if ( !model ) {
 		clog << "failed to mmap model" << endl;
 		exit(0);
 	}
 
-	static tflite::ops::builtin::BuiltinOpResolver resolver;
 	tflite::InterpreterBuilder(*model.get(), resolver)(&interpreter);
 
 	TfLiteStatus allocate_status = interpreter->AllocateTensors();
@@ -65,13 +140,20 @@ class NmsProc : public NmsCb
 {
 	protected:
 		Mat *pImage;
+		ODInference *infEngine;
 		int numBox;
 		int x_offset;
 		int y_offset;
 		vector<BoundingBox> bboxVec;
 
 	public:
-		NmsProc(Mat *img, int x_off, int y_off) { pImage = img; numBox = 0; x_offset = x_off; y_offset = y_off; }
+		NmsProc(Mat *img, int x_off, int y_off, ODInference *inference) {
+			pImage = img;
+			numBox = 0;
+			x_offset = x_off;
+			y_offset = y_off; 
+			infEngine = inference;
+		}
 		virtual ~NmsProc() {}
 
 	public:
@@ -109,7 +191,7 @@ string NmsProc::packJson()
 		BoundingBox bb = bboxVec[i];
 		s << "{\"minx\":" << bb.minX << ", \"maxx\":" << bb.maxX <<
 		     ", \"miny\":" << bb.minY << ", \"maxy\":" << bb.maxY <<
-			 ", \"score\":" << bb.score << ", \"class\":\"" << kCategoryLabels[bb.classId] << "\"}";
+			 ", \"score\":" << bb.score << ", \"class\":\"" << infEngine->getClassName(bb.classId) << "\"}";
 		if (i<bboxVec.size()-1) {
 			s << ",";
 		}
@@ -119,15 +201,14 @@ string NmsProc::packJson()
 	return s.str();
 }
 
-static int image_mode = INPUT_PADDING;
-string ssd_mobilenet_detect(Mat &img, const string &output,
+string ODInference::detect(Mat &img, const string &output,
 	int &width, int &height)
 {
 	Mat dstImg, outputImg;
 	float x_ratio, y_ratio;
 	int x_offset = 0, y_offset = 0;
 
-	switch (image_mode) {
+	switch (kImageMode) {
 		case INPUT_ORIGINAL:
 			resize(img, dstImg, Size(kNumCols, kNumRows));
 			x_ratio = (float)img.cols / (float)kNumCols;
@@ -194,7 +275,7 @@ string ssd_mobilenet_detect(Mat &img, const string &output,
 			nms.AddBoundingBox(bb);
 		}
 	}
-	NmsProc nmsCall(&outputImg, x_offset, y_offset);
+	NmsProc nmsCall(&outputImg, x_offset, y_offset, this);
 	nms.Go(50, nmsCall); // overlay threshold
 	string json = nmsCall.packJson();
 
@@ -206,33 +287,59 @@ string ssd_mobilenet_detect(Mat &img, const string &output,
 	return json;
 }
 
-class DetectCGI : public MyFastCgi
+class ODCGI : public MyFastCgi
 {
 	protected:
 		pthread_mutex_t m_mutex;
+		InferenceManager *m_im;
+
 	public:
-		DetectCGI();
+		ODCGI(InferenceManager *im) {
+			m_im = im;
+			pthread_mutex_init(&m_mutex, NULL);
+		}
+		virtual ~ODCGI() {
+			pthread_mutex_destroy(&m_mutex);
+		}
+};
+
+class DetectCGI : public ODCGI
+{
+	public:
+		DetectCGI(InferenceManager *im);
+
     public:
         int run(QueryString &qs, ostream &os);
 };
 
-DetectCGI::DetectCGI()
+DetectCGI::DetectCGI(InferenceManager *im):ODCGI(im)
 {
-	pthread_mutex_init(&m_mutex);
 }
 
-void returnValue(int width, int height, string &result, int ms, ostream &os)
+class NameCGI : public ODCGI
+{
+	public:
+		NameCGI(InferenceManager *m_im):ODCGI(m_im) {}
+
+	public:
+		int run(QueryString &qs, ostream &os);
+};
+
+void _returnValue(int width, int height, string &result, int ms, ostream &os)
 {
 	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms
 	   << ",\"width\":" << width << ",\"height\":" << height
 	   << ",\"detection\":" << result << "}";
 }
+#define returnValue(width, height, result, ms, os, rc) _returnValue(width, height, result, ms, os); return rc;
 
-void returnFail(const char *reason, ostream &os)
+void _returnFail(const char *reason, ostream &os)
 {
 	clog << reason << endl;
 	os << "{\"status\":\"fail\", \"reason\":\"" << reason << "\"}";
 }
+
+#define returnFail(reason, os, rc) _returnFail(reason, os); return rc;
 
 int DetectCGI::run(QueryString &qs, ostream &os)
 {
@@ -243,37 +350,79 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 			Mat img = imread(pi->firstValue());
 			clog << "input:" << pi->firstValue() << endl;
 			if (!img.data) {
-				returnFail("error: canot read file", os);
-				return -1;
+				returnFail("error: canot read file", os, -1);
 			}
 			auto po = qs.getParam("output");
 			int start = get_current_ticks();
 			int width, height;
-			pthread_mutex_lock(&m_mutex);
-   			string result = ssd_mobilenet_detect(img, po->firstValue(), width, height);
-			pthread_mutex_unlock(&m_mutex);
-			returnValue(width, height, result, get_current_ticks() - start, os );
+			string modelName = "default";
+			if (qs.hasParam("model")) {
+				auto pi = qs.getParam("model");
+				modelName = pi->firstValue();
+			}
+			ODInference *infEngine = m_im->findOd(modelName);
+			if (infEngine) {
+				string result = infEngine->detect(img, po->firstValue(), width, height);
+				returnValue(width, height, result, get_current_ticks() - start, os, 0);
+			}
+			returnFail("inference engine not found", os, -1);
 		} else {
-			returnFail("error: need input and output parameter", os);
-			return -1;
+			returnFail("need input and output parameter", os, -1);
 		}
 	} else {
-		returnFail("error: no parameter", os);
+		returnFail("error: no parameter", os, -1);
 		return -1;
 	}
 
     return 0;
 }
 
+int NameCGI::run(QueryString &qs, ostream &os)
+{
+    os << "Content-Type: application/json" << endl << endl;
+
+	os << "{[";
+	for (int i=0; i<m_im->vec.size(); i++) {
+		m_im->vec[i]->getName();
+		os << "\"" << m_im->vec[i]->getName() << "\"";
+		if (i<m_im->vec.size()-1) {
+			os << ",";
+		}
+	}
+	os << "]}";
+
+	return 0;
+}
+
 
 int main(int argc, char **argv)
 {
-	ssd_mobilenet_setup();
+	static const char *cocoLabels[] = {
+		"person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", " boat", "traffic light",
+		"fire hydrant", "???", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep",
+		"cow", "elephant", "bear", "zebra", "giraffe", "???", "backpack", "umbrella", "???", "???",
+		"handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+		"skateboard", "surfboard", "tennis racket", "bottle", "???", "wine glass", "cup", "fork", "knife", "spoon",
+		"bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut",
+		"cake", "chair", "couch", "potted plant", "bed", "???", "dining table", "???", "???", "toilet",
+		"???", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster",
+		"sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"};
 
-	HttpServer server(".", 8110);
-    DetectCGI mycgi;
+	MobileNetSSD ssd1(320, 320, 3, "ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite", 90, cocoLabels);
+	ssd1.modelSetup();
+	MobileNetSSD ssd2(32, 300, 3, "ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/model.tflite", 90, cocoLabels);
+	ssd2.modelSetup();
+
+	HttpServer server(".", 8120);
+	InferenceManager im;
+	im.add(&ssd2);
+	im.add(&ssd1);
+
+    DetectCGI detectCGI(&im);
+	NameCGI nameCGI(&im);
     
-    server.registerCgi("detect", mycgi);
+    server.registerCgi("detect", detectCGI);
+	server.registerCgi("name", nameCGI);
 	server.run(3); // acceptance 3 current request
 
 	return 0;
