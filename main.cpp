@@ -8,6 +8,7 @@
 #include "httpserver.h"
 #include "nms.h"
 #include "util.h"
+#include "INIReader.h"
 
 #define INPUT_ORIGINAL	0
 #define INPUT_CROP		1
@@ -33,11 +34,11 @@ class ODInference
 		tflite::ops::builtin::BuiltinOpResolver resolver;
 
 	public:
-		ODInference(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels);
+		ODInference(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels);
 		virtual ~ODInference() {}
 
 		void modelSetup();
-		string &getName() { return kModelName; }
+		string &getModelName() { return kModelName; }
 		string detect(Mat &img, const string &output, int &width, int &height);
 		virtual string getClassName(int classId);
 };
@@ -45,7 +46,7 @@ class ODInference
 class MobileNetSSD : public ODInference
 {
 	public:
-		MobileNetSSD(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels);
+		MobileNetSSD(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels);
 		~MobileNetSSD() {}
 };
 
@@ -84,7 +85,7 @@ ODInference *InferenceManager::findOd(string name)
 			return vec[0];
 
 		for (int i=0; i<vec.size(); i++) {
-			if (name == vec[i]->getName()) {
+			if (name == vec[i]->getModelName()) {
 				return vec[i];
 			}
 		}
@@ -93,7 +94,7 @@ ODInference *InferenceManager::findOd(string name)
 	return NULL;
 }
 
-ODInference::ODInference(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels)
+ODInference::ODInference(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels)
 {
 	kModelName = modelName;
 	kNumCols = iWidth;
@@ -109,7 +110,7 @@ string ODInference::getClassName(int classId)
 	return string(kCategoryLabels[classId]);
 }
 
-MobileNetSSD::MobileNetSSD(int iWidth, int iHeight, int iNumCh, const char *modelName, int numCategory, const char **labels):
+MobileNetSSD::MobileNetSSD(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels):
 	ODInference(iWidth, iHeight, iNumCh, modelName, numCategory, labels)
 {
 	kImageMode = INPUT_PADDING;
@@ -120,7 +121,8 @@ void ODInference::modelSetup()
 {
 	tflite::ErrorReporter* error_reporter = nullptr;
 	error_reporter = &my_error_reporter;
-	model = tflite::FlatBufferModel::BuildFromFile(kModelName.c_str());
+	string filename = kModelName + "/model.tflite";
+	model = tflite::FlatBufferModel::BuildFromFile(filename.c_str());
 
 	if ( !model ) {
 		clog << "failed to mmap model" << endl;
@@ -349,13 +351,15 @@ class NameCGI : public ODCGI
 		int run(QueryString &qs, ostream &os);
 };
 
-void _returnValue(int width, int height, string &result, int ms, ostream &os)
+void _returnValue(int width, int height, string &modelName, string &result, int ms, ostream &os)
 {
-	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms
+	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms 
+	   << ",\"model\":" << "\"" << modelName << "\""
 	   << ",\"width\":" << width << ",\"height\":" << height
 	   << ",\"detection\":" << result << "}";
 }
-#define returnValue(width, height, result, ms, os, rc) _returnValue(width, height, result, ms, os); return rc;
+#define returnValue(width, height, modelName, result, ms, os, rc) \
+	_returnValue(width, height, modelName, result, ms, os); return rc;
 
 void _returnFail(const char *reason, ostream &os)
 {
@@ -387,7 +391,8 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 			if (infEngine) {
 				int width = 0, height = 0;
 				string result = infEngine->detect(img, po->firstValue(), width, height);
-				returnValue(width, height, result, get_current_ticks() - start, os, 0);
+				returnValue(width, height, infEngine->getModelName(),
+					result, get_current_ticks() - start, os, 0);
 			}
 			returnFail("inference engine not found", os, -1);
 		} else {
@@ -407,8 +412,8 @@ int NameCGI::run(QueryString &qs, ostream &os)
 
 	os << "{[";
 	for (int i=0; i<m_im->vec.size(); i++) {
-		m_im->vec[i]->getName();
-		os << "\"" << m_im->vec[i]->getName() << "\"";
+		m_im->vec[i]->getModelName();
+		os << "\"" << m_im->vec[i]->getModelName() << "\"";
 		if (i<m_im->vec.size()-1) {
 			os << ",";
 		}
@@ -419,34 +424,57 @@ int NameCGI::run(QueryString &qs, ostream &os)
 }
 
 
+static const char *cocoLabels[] = {
+	"person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", " boat", "traffic light",
+	"fire hydrant", "???", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep",
+	"cow", "elephant", "bear", "zebra", "giraffe", "???", "backpack", "umbrella", "???", "???",
+	"handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+	"skateboard", "surfboard", "tennis racket", "bottle", "???", "wine glass", "cup", "fork", "knife", "spoon",
+	"bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut",
+	"cake", "chair", "couch", "potted plant", "bed", "???", "dining table", "???", "???", "toilet",
+	"???", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster",
+	"sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"};
+
+#define COUNT_LABELS	(sizeof(cocoLabels)/sizeof(char *))
+string sections(INIReader &reader)
+{
+    stringstream ss;
+    set<string> sections = reader.Sections();
+    for (set<string>::iterator it = sections.begin(); it != sections.end(); ++it)
+        ss << "    " << *it << endl;
+
+    return ss.str();
+}
+
 int main(int argc, char **argv)
 {
-	static const char *cocoLabels[] = {
-		"person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", " boat", "traffic light",
-		"fire hydrant", "???", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep",
-		"cow", "elephant", "bear", "zebra", "giraffe", "???", "backpack", "umbrella", "???", "???",
-		"handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-		"skateboard", "surfboard", "tennis racket", "bottle", "???", "wine glass", "cup", "fork", "knife", "spoon",
-		"bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut",
-		"cake", "chair", "couch", "potted plant", "bed", "???", "dining table", "???", "???", "toilet",
-		"???", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster",
-		"sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"};
-
-	MobileNetSSD ssd1(320, 320, 3, "ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite", 90, cocoLabels);
-	MobileNetSSD ssd2(320, 300, 3, "ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/model.tflite", 90, cocoLabels);
+	INIReader reader("models.ini");
+	if (reader.ParseError() < 0) {
+        clog << "error: can't load 'models.ini'\n";
+        return 1;
+    }
+	clog << "config loaded from 'models.ini', models:" << endl << sections(reader);
 
 	HttpServer server(".", 8120);
 	InferenceManager im;
 
-	im.add(&ssd2);
-	im.add(&ssd1);
+	set<string> sections = reader.Sections();
+	for (set<string>::iterator it = sections.begin(); it != sections.end(); ++it) {
+		int width = reader.GetInteger(*it, "width", -1);
+		int height = reader.GetInteger(*it, "height", -1);
+		int channels = reader.GetInteger(*it, "channels", -1);
+		if (width < 0 || height < 0 || channels < 0)
+			continue;
+		MobileNetSSD *ssd = new MobileNetSSD(width, height, channels, *it, COUNT_LABELS, cocoLabels);
+		im.add(ssd);
+	}
 
     DetectCGI detectCGI(&im);
 	NameCGI nameCGI(&im);
     
     server.registerCgi("detect", detectCGI);
-	server.registerCgi("name", nameCGI);
-	server.run(3); // acceptance 3 current request
+	server.registerCgi("model_list", nameCGI);
+	server.run(5); // acceptance 5 current request
 
 	return 0;
 }
