@@ -113,6 +113,7 @@ MobileNetSSD::MobileNetSSD(int iWidth, int iHeight, int iNumCh, const char *mode
 	ODInference(iWidth, iHeight, iNumCh, modelName, numCategory, labels)
 {
 	kImageMode = INPUT_PADDING;
+	modelSetup();
 }
 
 void ODInference::modelSetup()
@@ -191,7 +192,9 @@ string NmsProc::packJson()
 		BoundingBox bb = bboxVec[i];
 		s << "{\"minx\":" << bb.minX << ", \"maxx\":" << bb.maxX <<
 		     ", \"miny\":" << bb.minY << ", \"maxy\":" << bb.maxY <<
-			 ", \"score\":" << bb.score << ", \"class\":\"" << infEngine->getClassName(bb.classId) << "\"}";
+			 ", \"score\":" << bb.score << 
+			 ", \"id\":" << bb.classId <<
+			 ", \"class\":\"" << infEngine->getClassName(bb.classId) << "\"}";
 		if (i<bboxVec.size()-1) {
 			s << ",";
 		}
@@ -258,14 +261,15 @@ string ODInference::detect(Mat &img, const string &output,
 	float_data = interpreter->typed_input_tensor<float_t>(0);
 	uint8_t *in = dstImg.data;
 
-	if (uint8_data!=0) {
+	printf("uint8_data=%p, int8_data=%p, float_data=%p\n", uint8_data, int8_data, float_data);
+	if (uint8_data) {
 		memcpy(uint8_data, in, kMaxImageSize);
-	} else if (int8_data!=0) {
+	} else if (int8_data) {
 		int count = kMaxImageSize;
 		while (count-->0) {
-			*int8_data++ = (int8_t)((int)(*in++)-128);
+			*int8_data++ = (int8_t)(((int)(*in++))-128);
 		}
-	} else if (float_data!=0) {
+	} else if (float_data) {
 		int count = kMaxImageSize;
 		while (count-->0) {
 			*float_data++ = ((float)(*in++)) / 256.0;
@@ -275,6 +279,7 @@ string ODInference::detect(Mat &img, const string &output,
 	interpreter->Invoke();
 
 	NmsPostProcess nms;
+
 	/* 4 output tensors */
 	float_t *out0 = interpreter->typed_output_tensor<float_t>(0);
 	float_t *out1 = interpreter->typed_output_tensor<float_t>(1);
@@ -427,15 +432,14 @@ int main(int argc, char **argv)
 		"???", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster",
 		"sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"};
 
-	//MobileNetSSD ssd1(320, 320, 3, "ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite", 90, cocoLabels);
-	//ssd1.modelSetup();
-	MobileNetSSD ssd2(32, 300, 3, "ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/model.tflite", 90, cocoLabels);
-	ssd2.modelSetup();
+	MobileNetSSD ssd1(320, 320, 3, "ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite", 90, cocoLabels);
+	MobileNetSSD ssd2(320, 300, 3, "ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/model.tflite", 90, cocoLabels);
 
 	HttpServer server(".", 8120);
 	InferenceManager im;
+
 	im.add(&ssd2);
-	//im.add(&ssd1);
+	im.add(&ssd1);
 
     DetectCGI detectCGI(&im);
 	NameCGI nameCGI(&im);
