@@ -44,6 +44,8 @@ class ODInference
 		void modelSetup();
 		string &getModelName() { return kModelName; }
 		string detect(Mat &img, const string &output, int &width, int &height);
+		inline int getScore() { return kScoreThreshold; }
+		inline int getIou() { return kIouThreshold; }
 		virtual string getClassName(int classId);
 };
 
@@ -362,15 +364,17 @@ class NameCGI : public ODCGI
 		int run(QueryString &qs, ostream &os);
 };
 
-void _returnValue(int width, int height, string &modelName, string &result, int ms, ostream &os)
+void _returnValue(int width, int height, int score, int iou,
+	string &modelName, string &result, int ms, ostream &os)
 {
 	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms 
 	   << ",\"model\":" << "\"" << modelName << "\""
 	   << ",\"width\":" << width << ",\"height\":" << height
+	   << ",\"score\":" << score << ",\"iou\":" << iou
 	   << ",\"detection\":" << result << "}";
 }
-#define returnValue(width, height, modelName, result, ms, os, rc) \
-	_returnValue(width, height, modelName, result, ms, os); return rc;
+#define returnValue(width, height, score, iou, modelName, result, ms, os, rc) \
+	_returnValue(width, height, score, iou, modelName, result, ms, os); return rc;
 
 void _returnFail(const char *reason, ostream &os)
 {
@@ -402,7 +406,15 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 			if (infEngine) {
 				int width = 0, height = 0;
 				string result = infEngine->detect(img, po->firstValue(), width, height);
-				returnValue(width, height, infEngine->getModelName(),
+				returnValue(width, height, infEngine->getScore(), infEngine->getIou(),
+					infEngine->getModelName(), result, get_current_ticks() - start, os, 0);
+			}
+			// engine not found, fallback to default
+			infEngine = m_im->findOd(string("default"));
+			if (infEngine) {
+				int width = 0, height = 0;
+				string result = infEngine->detect(img, po->firstValue(), width, height);
+				returnValue(width, height, infEngine->getScore(), infEngine->getIou(), infEngine->getModelName(),
 					result, get_current_ticks() - start, os, 0);
 			}
 			returnFail("inference engine not found", os, -1);
