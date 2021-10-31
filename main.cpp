@@ -27,6 +27,8 @@ class ODInference
 		int kMaxImageSize;
 		int kImageMode;
 		int kCategoryCount;
+		int kScoreThreshold;
+		int kIouThreshold;
 		const char **kCategoryLabels;
 		std::unique_ptr<tflite::Interpreter> interpreter;
 		tflite::StderrReporter my_error_reporter;
@@ -34,7 +36,9 @@ class ODInference
 		tflite::ops::builtin::BuiltinOpResolver resolver;
 
 	public:
-		ODInference(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels);
+		ODInference(int iWidth, int iHeight, int iNumCh,
+			int score, int iou, string modelName,
+			int numCategory, const char **labels);
 		virtual ~ODInference() {}
 
 		void modelSetup();
@@ -46,8 +50,9 @@ class ODInference
 class MobileNetSSD : public ODInference
 {
 	public:
-		MobileNetSSD(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels);
-		~MobileNetSSD() {}
+		MobileNetSSD(int iWidth, int iHeight, int iNumCh,
+			int score, int iou, string modelName,
+			int numCategory, const char **labels);
 };
 
 class InferenceManager
@@ -94,13 +99,17 @@ ODInference *InferenceManager::findOd(string name)
 	return NULL;
 }
 
-ODInference::ODInference(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels)
+ODInference::ODInference(int iWidth, int iHeight, int iNumCh,
+	int score, int iou, string modelName,
+	int numCategory, const char **labels)
 {
 	kModelName = modelName;
 	kNumCols = iWidth;
 	kNumRows = iHeight;
 	kNumChannels = iNumCh;
 	kMaxImageSize = kNumCols * kNumRows * kNumChannels;
+	kScoreThreshold = score;
+	kIouThreshold = iou;
 	kCategoryCount = numCategory;
 	kCategoryLabels = labels;
 }
@@ -110,8 +119,11 @@ string ODInference::getClassName(int classId)
 	return string(kCategoryLabels[classId]);
 }
 
-MobileNetSSD::MobileNetSSD(int iWidth, int iHeight, int iNumCh, string modelName, int numCategory, const char **labels):
-	ODInference(iWidth, iHeight, iNumCh, modelName, numCategory, labels)
+MobileNetSSD::MobileNetSSD(int iWidth, int iHeight, int iNumCh,
+	int score, int iou,
+	string modelName, int numCategory, const char **labels):
+	ODInference(iWidth, iHeight, iNumCh, score, iou, 
+		modelName, numCategory, labels)
 {
 	kImageMode = INPUT_PADDING;
 	modelSetup();
@@ -263,7 +275,6 @@ string ODInference::detect(Mat &img, const string &output,
 	float_data = interpreter->typed_input_tensor<float_t>(0);
 	uint8_t *in = dstImg.data;
 
-	printf("uint8_data=%p, int8_data=%p, float_data=%p\n", uint8_data, int8_data, float_data);
 	if (uint8_data) {
 		memcpy(uint8_data, in, kMaxImageSize);
 	} else if (int8_data) {
@@ -296,13 +307,13 @@ string ODInference::detect(Mat &img, const string &output,
 		int maxY = (int)(y_ratio * kNumRows * out0[i*4+2]);
 		int score = (int)(out2[i] * 100.0);
 		int classId = (int) out1[i];
-		if (score > 50) {
+		if (score > kScoreThreshold ) {
 			BoundingBox bb(minX, minY, maxX, maxY, score, classId);
 			nms.AddBoundingBox(bb);
 		}
 	}
 	NmsProc nmsCall(&outputImg, x_offset, y_offset, this);
-	nms.Go(50, nmsCall); // overlay threshold
+	nms.Go(kIouThreshold, nmsCall); // overlay threshold
 	string json = nmsCall.packJson();
 
 	auto rc = imwrite(output, outputImg);
@@ -463,9 +474,12 @@ int main(int argc, char **argv)
 		int width = reader.GetInteger(*it, "width", -1);
 		int height = reader.GetInteger(*it, "height", -1);
 		int channels = reader.GetInteger(*it, "channels", -1);
+		int score = reader.GetInteger(*it, "score", 50);
+		int iou = reader.GetInteger(*it, "iou", 50);
 		if (width < 0 || height < 0 || channels < 0)
 			continue;
-		MobileNetSSD *ssd = new MobileNetSSD(width, height, channels, *it, COUNT_LABELS, cocoLabels);
+		MobileNetSSD *ssd = new MobileNetSSD(width, height, channels,
+			score, iou, *it, COUNT_LABELS, cocoLabels);
 		im.add(ssd);
 	}
 

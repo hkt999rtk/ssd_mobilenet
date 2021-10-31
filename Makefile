@@ -12,8 +12,13 @@ config:
 install:
 	@echo "Installation path" $(INS_PATH)
 	@mkdir -p $(INS_PATH)/ssd_mobilenet_v3_large_coco_2020_01_14
+	@mkdir -p $(INS_PATH)/ssd_mobilenet_v3_small_coco_2020_01_14
+	@mkdir -p $(INS_PATH)/ssdlite_mobiledet_cpu_320x320_coco_2020_05_19
 	@cp build/ssd_mobilenet_detection $(INS_PATH)
+	@cp models.ini $(INS_PATH)
 	@cp ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite $(INS_PATH)/ssd_mobilenet_v3_large_coco_2020_01_14
+	@cp ssd_mobilenet_v3_small_coco_2020_01_14/model.tflite $(INS_PATH)/ssd_mobilenet_v3_small_coco_2020_01_14
+	@cp ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/model.tflite $(INS_PATH)/ssdlite_mobiledet_cpu_320x320_coco_2020_05_19
 	@echo "Done"
 
 start:
