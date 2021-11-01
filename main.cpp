@@ -202,7 +202,7 @@ void NmsProc::addBox(BoundingBox bbox)
 int NmsProc::callback(BoundingBox &bb)
 {
 	Rect rect(bb.minX-x_offset, bb.minY-y_offset, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
-	rectangle(*pImage, rect, Scalar(180,105,255), 3);
+	rectangle(*pImage, rect, Scalar(180,105,255), 2);
 
 #if 0
 	char s[128];
@@ -321,26 +321,25 @@ string ODInference::detect(Mat &img, const string &output,
 			TfLiteIntArray *outputDims = interpreter->tensor(outputTensorIndex)->dims;
 			for (int j=0; j<outputDims->size; j++) {
 				if (j == 1) numBoxes = outputDims->data[j];
-				if (i == 1 && j == 2) numClasses = outputDims->data[j];
+				if (i == 0 && j == 2) numClasses = outputDims->data[j];
 			}
 		}
-		/* Return a mutable pointer into the data of a given output tensor. */
-		float_t *boxes = interpreter->typed_output_tensor<float_t>(0);
-		float_t *scores = interpreter->typed_output_tensor<float_t>(1);
+		// Return a mutable pointer into the data of a given output tensor
+		float_t *boxes = interpreter->typed_output_tensor<float_t>(1);
+		float_t *scores = interpreter->typed_output_tensor<float_t>(0);
 		for (int i=0; i<numBoxes; i++) {
 			for (int j=0; j<numClasses; j++) {
 				int score = (int)(scores[i * numClasses + j] * 100);
-				if (score > kScoreThreshold && j == 0) {
+				if (score > kScoreThreshold) {
 					float x = boxes[i*4];
 					float y = boxes[i*4+1];
 					float w = boxes[i*4+2];
 					float h = boxes[i*4+3];
-					int minX = (x - w / 2.0);
-					int maxX = (x + w / 2.0);
-					int minY = (y - h / 2.0);
-					int maxY = (y + h / 2.0);
-					printf("minX=%d, minY=%d, maxX=%d, maxY=%d, score=%d, classid=%d\n", minX, minY, maxX, maxY, score, j);
-					BoundingBox box(minX, minY, maxX, maxY, int(score * 100), j);
+					int minX = x_ratio * (x - w / 2.0);
+					int maxX = x_ratio * (x + w / 2.0);
+					int minY = y_ratio * (y - h / 2.0);
+					int maxY = y_ratio * (y + h / 2.0);
+					BoundingBox box(minX, minY, maxX, maxY, score, j);
 					nms.AddBoundingBox(box);
 				}
 			}
@@ -521,7 +520,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-	HttpServer server(".", 8120);
+	HttpServer server(".", 8110);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();

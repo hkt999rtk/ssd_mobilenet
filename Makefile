@@ -16,6 +16,7 @@ install:
 	@mkdir -p $(INS_PATH)/ssdlite_mobiledet_cpu_320x320_coco_2020_05_19
 	@mkdir -p $(INS_PATH)/lite-model_efficientdet_lite0_int8
 	@mkdir -p $(INS_PATH)/yolov3-416-int8
+	@mkdir -p $(INS_PATH)/yolov3-tiny-416-int8
 	@cp build/ssd_mobilenet_detection $(INS_PATH)
 	@cp models.ini $(INS_PATH)
 	@cp ssd_mobilenet_v3_large_coco_2020_01_14/model.tflite $(INS_PATH)/ssd_mobilenet_v3_large_coco_2020_01_14
@@ -23,6 +24,7 @@ install:
 	@cp ssdlite_mobiledet_cpu_320x320_coco_2020_05_19/model.tflite $(INS_PATH)/ssdlite_mobiledet_cpu_320x320_coco_2020_05_19
 	@cp lite-model_efficientdet_lite0_int8/model.tflite $(INS_PATH)/lite-model_efficientdet_lite0_int8
 	@cp yolov3-416-int8/model.tflite $(INS_PATH)/yolov3-416-int8
+	@cp yolov3-tiny-416-int8/model.tflite $(INS_PATH)/yolov3-tiny-416-int8
 	@echo "Done"
 
 start:
