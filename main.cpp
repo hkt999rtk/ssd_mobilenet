@@ -37,12 +37,13 @@ class ODInference
 		tflite::StderrReporter my_error_reporter;
 		std::unique_ptr<tflite::FlatBufferModel> model;
 		tflite::ops::builtin::BuiltinOpResolver resolver;
+		pthread_mutex_t m_mutex;
 
 	public:
 		ODInference(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
 			int numCategory, const char **labels);
-		virtual ~ODInference() {}
+		virtual ~ODInference();
 
 		void modelSetup();
 		string &getModelName() { return kModelName; }
@@ -129,6 +130,12 @@ ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	kCategoryCount = numCategory;
 	kCategoryLabels = labels;
 	kDefault = false;
+	pthread_mutex_init(&m_mutex, NULL);
+}
+
+ODInference::~ODInference()
+{
+	pthread_mutex_destroy(&m_mutex); 
 }
 
 string ODInference::getClassName(int classId)
@@ -202,7 +209,7 @@ void NmsProc::addBox(BoundingBox bbox)
 int NmsProc::callback(BoundingBox &bb)
 {
 	Rect rect(bb.minX-x_offset, bb.minY-y_offset, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
-	rectangle(*pImage, rect, Scalar(180,105,255), 3);
+	rectangle(*pImage, rect, Scalar(180,105,255), 2);
 
 #if 0
 	char s[128];
@@ -284,6 +291,7 @@ string ODInference::detect(Mat &img, const string &output,
 	}
     cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
 
+	pthread_mutex_lock(&m_mutex);
 	int8_t *int8_data = 0;
 	uint8_t *uint8_data = 0;
 	float_t *float_data = 0;
@@ -321,26 +329,25 @@ string ODInference::detect(Mat &img, const string &output,
 			TfLiteIntArray *outputDims = interpreter->tensor(outputTensorIndex)->dims;
 			for (int j=0; j<outputDims->size; j++) {
 				if (j == 1) numBoxes = outputDims->data[j];
-				if (i == 1 && j == 2) numClasses = outputDims->data[j];
+				if (i == 0 && j == 2) numClasses = outputDims->data[j];
 			}
 		}
-		/* Return a mutable pointer into the data of a given output tensor. */
-		float_t *boxes = interpreter->typed_output_tensor<float_t>(0);
-		float_t *scores = interpreter->typed_output_tensor<float_t>(1);
+		// Return a mutable pointer into the data of a given output tensor
+		float_t *boxes = interpreter->typed_output_tensor<float_t>(1);
+		float_t *scores = interpreter->typed_output_tensor<float_t>(0);
 		for (int i=0; i<numBoxes; i++) {
 			for (int j=0; j<numClasses; j++) {
 				int score = (int)(scores[i * numClasses + j] * 100);
-				if (score > kScoreThreshold && j == 0) {
+				if (score > kScoreThreshold) {
 					float x = boxes[i*4];
 					float y = boxes[i*4+1];
 					float w = boxes[i*4+2];
 					float h = boxes[i*4+3];
-					int minX = (x - w / 2.0);
-					int maxX = (x + w / 2.0);
-					int minY = (y - h / 2.0);
-					int maxY = (y + h / 2.0);
-					printf("minX=%d, minY=%d, maxX=%d, maxY=%d, score=%d, classid=%d\n", minX, minY, maxX, maxY, score, j);
-					BoundingBox box(minX, minY, maxX, maxY, int(score * 100), j);
+					int minX = x_ratio * (x - w / 2.0);
+					int maxX = x_ratio * (x + w / 2.0);
+					int minY = y_ratio * (y - h / 2.0);
+					int maxY = y_ratio * (y + h / 2.0);
+					BoundingBox box(minX, minY, maxX, maxY, score, j);
 					nms.AddBoundingBox(box);
 				}
 			}
@@ -374,6 +381,7 @@ string ODInference::detect(Mat &img, const string &output,
 	clog << "write image to " << output << endl;
 	width = outputImg.cols;
 	height = outputImg.rows;
+	pthread_mutex_unlock(&m_mutex);
 
 	return json;
 }
@@ -381,17 +389,13 @@ string ODInference::detect(Mat &img, const string &output,
 class ODCGI : public MyFastCgi
 {
 	protected:
-		pthread_mutex_t m_mutex;
 		InferenceManager *m_im;
 
 	public:
 		ODCGI(InferenceManager *im) {
 			m_im = im;
-			pthread_mutex_init(&m_mutex, NULL);
 		}
-		virtual ~ODCGI() {
-			pthread_mutex_destroy(&m_mutex);
-		}
+		virtual ~ODCGI() { }
 };
 
 class DetectCGI : public ODCGI
