@@ -478,7 +478,7 @@ int main(int argc, char **argv)
     }
 	clog << "config loaded from 'models.ini', models:" << endl << sections(reader);
 
-	HttpServer server(".", 8120);
+	HttpServer server(".", 8110);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();
