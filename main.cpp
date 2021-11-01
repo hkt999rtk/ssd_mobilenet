@@ -37,12 +37,13 @@ class ODInference
 		tflite::StderrReporter my_error_reporter;
 		std::unique_ptr<tflite::FlatBufferModel> model;
 		tflite::ops::builtin::BuiltinOpResolver resolver;
+		pthread_mutex_t m_mutex;
 
 	public:
 		ODInference(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
 			int numCategory, const char **labels);
-		virtual ~ODInference() {}
+		virtual ~ODInference();
 
 		void modelSetup();
 		string &getModelName() { return kModelName; }
@@ -129,6 +130,12 @@ ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	kCategoryCount = numCategory;
 	kCategoryLabels = labels;
 	kDefault = false;
+	pthread_mutex_init(&m_mutex, NULL);
+}
+
+ODInference::~ODInference()
+{
+	pthread_mutex_destroy(&m_mutex); 
 }
 
 string ODInference::getClassName(int classId)
@@ -284,6 +291,7 @@ string ODInference::detect(Mat &img, const string &output,
 	}
     cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
 
+	pthread_mutex_lock(&m_mutex);
 	int8_t *int8_data = 0;
 	uint8_t *uint8_data = 0;
 	float_t *float_data = 0;
@@ -373,6 +381,7 @@ string ODInference::detect(Mat &img, const string &output,
 	clog << "write image to " << output << endl;
 	width = outputImg.cols;
 	height = outputImg.rows;
+	pthread_mutex_unlock(&m_mutex);
 
 	return json;
 }
@@ -380,17 +389,13 @@ string ODInference::detect(Mat &img, const string &output,
 class ODCGI : public MyFastCgi
 {
 	protected:
-		pthread_mutex_t m_mutex;
 		InferenceManager *m_im;
 
 	public:
 		ODCGI(InferenceManager *im) {
 			m_im = im;
-			pthread_mutex_init(&m_mutex, NULL);
 		}
-		virtual ~ODCGI() {
-			pthread_mutex_destroy(&m_mutex);
-		}
+		virtual ~ODCGI() { }
 };
 
 class DetectCGI : public ODCGI
