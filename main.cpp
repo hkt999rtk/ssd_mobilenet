@@ -102,7 +102,7 @@ ODInference *InferenceManager::findOd(string name)
 			return vec[0];
 		} else {
 			for (int i=0; i<vec.size(); i++) {
-				if (name == vec[i]->getModelName()) {
+				if (name == vec[i]->getTitle()) {
 					return vec[i];
 				}
 			}
