@@ -31,6 +31,7 @@ class ODInference
 		int kScoreThreshold;
 		int kIouThreshold;
 		bool kDefault;
+		string kPostProcess;
 		const char **kCategoryLabels;
 		std::unique_ptr<tflite::Interpreter> interpreter;
 		tflite::StderrReporter my_error_reporter;
@@ -51,6 +52,7 @@ class ODInference
 		inline int getIou() { return kIouThreshold; }
 		inline bool isDefault() { return kDefault; }
 		inline void setDefault() { kDefault = true; }
+		inline void setPostProcess(string pp) { kPostProcess = pp; }
 		virtual string getClassName(int classId);
 };
 
@@ -111,7 +113,6 @@ ODInference *InferenceManager::findOd(string name)
 
 	return NULL;
 }
-
 
 ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	int score, int iou, string modelName,
@@ -307,27 +308,64 @@ string ODInference::detect(Mat &img, const string &output,
 
 	interpreter->Invoke();
 
+	int numOutputTensor = interpreter->outputs().size();
+	if (numOutputTensor != 4) {
+		// TODO: error here
+	}
+
+	int numBoxes, numClasses;
 	NmsPostProcess nms;
+	if (kPostProcess == "yolo") {
+		for (int i=0; i<numOutputTensor; i++) {
+			int outputTensorIndex = interpreter->outputs()[i];
+			TfLiteIntArray *outputDims = interpreter->tensor(outputTensorIndex)->dims;
+			for (int j=0; j<outputDims->size; j++) {
+				if (j == 1) numBoxes = outputDims->data[j];
+				if (i == 1 && j == 2) numClasses = outputDims->data[j];
+			}
+		}
+		/* Return a mutable pointer into the data of a given output tensor. */
+		float_t *boxes = interpreter->typed_output_tensor<float_t>(0);
+		float_t *scores = interpreter->typed_output_tensor<float_t>(1);
+		for (int i=0; i<numBoxes; i++) {
+			for (int j=0; j<numClasses; j++) {
+				int score = (int)(scores[i * numClasses + j] * 100);
+				if (score > kScoreThreshold && j == 0) {
+					float x = boxes[i*4];
+					float y = boxes[i*4+1];
+					float w = boxes[i*4+2];
+					float h = boxes[i*4+3];
+					int minX = (x - w / 2.0);
+					int maxX = (x + w / 2.0);
+					int minY = (y - h / 2.0);
+					int maxY = (y + h / 2.0);
+					printf("minX=%d, minY=%d, maxX=%d, maxY=%d, score=%d, classid=%d\n", minX, minY, maxX, maxY, score, j);
+					BoundingBox box(minX, minY, maxX, maxY, int(score * 100), j);
+					nms.AddBoundingBox(box);
+				}
+			}
+		}
+	} else {
+		// Google SSD
+		float_t *boxes = interpreter->typed_output_tensor<float_t>(0);
+		float_t *classIds = interpreter->typed_output_tensor<float_t>(1);
+		float_t *scores = interpreter->typed_output_tensor<float_t>(2);
+		int numBoxes = (int)(*interpreter->typed_output_tensor<float_t>(3));
 
-	/* 4 output tensors */
-	float_t *out0 = interpreter->typed_output_tensor<float_t>(0);
-	float_t *out1 = interpreter->typed_output_tensor<float_t>(1);
-	float_t *out2 = interpreter->typed_output_tensor<float_t>(2);
-	float_t *out3 = interpreter->typed_output_tensor<float_t>(3);
-	int numBoxes = (int)*out3;
-
-	for (int i=0; i<numBoxes; i++) {
-		int minX = (int)(x_ratio * kNumCols * out0[i*4+1]);
-		int minY = (int)(y_ratio * kNumRows * out0[i*4]);
-		int maxX = (int)(x_ratio * kNumCols * out0[i*4+3]);
-		int maxY = (int)(y_ratio * kNumRows * out0[i*4+2]);
-		int score = (int)(out2[i] * 100.0);
-		int classId = (int) out1[i];
-		if (score > kScoreThreshold ) {
-			BoundingBox bb(minX, minY, maxX, maxY, score, classId);
-			nms.AddBoundingBox(bb);
+		for (int i=0; i<numBoxes; i++) {
+			int minX = (int)(x_ratio * kNumCols * boxes[i*4+1]);
+			int minY = (int)(y_ratio * kNumRows * boxes[i*4]);
+			int maxX = (int)(x_ratio * kNumCols * boxes[i*4+3]);
+			int maxY = (int)(y_ratio * kNumRows * boxes[i*4+2]);
+			int score = (int)(scores[i] * 100.0);
+			int classId = (int) classIds[i];
+			if (score > kScoreThreshold ) {
+				BoundingBox bb(minX, minY, maxX, maxY, score, classId);
+				nms.AddBoundingBox(bb);
+			}
 		}
 	}
+
 	NmsProc nmsCall(&outputImg, x_offset, y_offset, this);
 	nms.Go(kIouThreshold, nmsCall); // overlay threshold
 	string json = nmsCall.packJson();
@@ -483,7 +521,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-	HttpServer server(".", 8110);
+	HttpServer server(".", 8120);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();
@@ -495,12 +533,18 @@ int main(int argc, char **argv)
 		int iou = reader.GetInteger(*it, "iou", 50);
 		int isDefault = reader.GetInteger(*it, "default", 0);
 		string title = reader.Get(*it, "title", "unknown");
+		string post = reader.Get(*it,"post", "ssd");
 		if (width < 0 || height < 0 || channels < 0)
 			continue;
 		MobileNetSSD *ssd = new MobileNetSSD(title, width, height, channels,
 			score, iou, *it, COUNT_LABELS, cocoLabels);
 		if (isDefault)
 			ssd->setDefault();
+
+		for_each(post.begin(), post.end(), [](char & c) {
+			c = ::tolower(c);
+		});
+		ssd->setPostProcess(post);
 		im.add(ssd);
 		clog << "load model: " << *it;
 		if (isDefault) {
