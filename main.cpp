@@ -521,7 +521,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-	HttpServer server(".", 8120);
+	HttpServer server(".", 8110);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();
