@@ -382,7 +382,7 @@ void _returnValue(string title, int width, int height, int score, int iou,
 	string &modelName, string &result, int ms, ostream &os)
 {
 	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms 
-	   << ",\"title\":" << title << "\""
+	   << ",\"title\":\"" << title << "\""
 	   << ",\"model\":" << "\"" << modelName << "\""
 	   << ",\"width\":" << width << ",\"height\":" << height
 	   << ",\"score\":" << score << ",\"iou\":" << iou
@@ -475,16 +475,6 @@ static const char *cocoLabels[] = {
 	"sink", "refrigerator", "???", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"};
 
 #define COUNT_LABELS	(sizeof(cocoLabels)/sizeof(char *))
-string sections(INIReader &reader)
-{
-    stringstream ss;
-    set<string> sections = reader.Sections();
-    for (set<string>::iterator it = sections.begin(); it != sections.end(); ++it)
-        ss << "    " << *it << endl;
-
-    return ss.str();
-}
-
 int main(int argc, char **argv)
 {
 	INIReader reader("models.ini");
@@ -492,14 +482,12 @@ int main(int argc, char **argv)
         clog << "error: can't load 'models.ini'\n";
         return 1;
     }
-	clog << "config loaded from 'models.ini', models:" << endl << sections(reader);
 
 	HttpServer server(".", 8110);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();
 	for (set<string>::iterator it = sections.begin(); it != sections.end(); ++it) {
-		clog << "load model: " << *it << endl;
 		int width = reader.GetInteger(*it, "width", -1);
 		int height = reader.GetInteger(*it, "height", -1);
 		int channels = reader.GetInteger(*it, "channels", -1);
@@ -514,6 +502,11 @@ int main(int argc, char **argv)
 		if (isDefault)
 			ssd->setDefault();
 		im.add(ssd);
+		clog << "load model: " << *it;
+		if (isDefault) {
+			clog << " (default)";
+		}
+		clog << endl;
 	}
 
     DetectCGI detectCGI(&im);
