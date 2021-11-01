@@ -20,6 +20,7 @@ using namespace cv;
 class ODInference
 {
 	protected:
+		string kTitle;
 		string kModelName;
 		int kNumCols;
 		int kNumRows;
@@ -29,6 +30,7 @@ class ODInference
 		int kCategoryCount;
 		int kScoreThreshold;
 		int kIouThreshold;
+		bool kDefault;
 		const char **kCategoryLabels;
 		std::unique_ptr<tflite::Interpreter> interpreter;
 		tflite::StderrReporter my_error_reporter;
@@ -36,23 +38,26 @@ class ODInference
 		tflite::ops::builtin::BuiltinOpResolver resolver;
 
 	public:
-		ODInference(int iWidth, int iHeight, int iNumCh,
+		ODInference(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
 			int numCategory, const char **labels);
 		virtual ~ODInference() {}
 
 		void modelSetup();
 		string &getModelName() { return kModelName; }
+		inline string getTitle() { return kTitle; }
 		string detect(Mat &img, const string &output, int &width, int &height);
 		inline int getScore() { return kScoreThreshold; }
 		inline int getIou() { return kIouThreshold; }
+		inline bool isDefault() { return kDefault; }
+		inline void setDefault() { kDefault = true; }
 		virtual string getClassName(int classId);
 };
 
 class MobileNetSSD : public ODInference
 {
 	public:
-		MobileNetSSD(int iWidth, int iHeight, int iNumCh,
+		MobileNetSSD(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
 			int numCategory, const char **labels);
 };
@@ -88,12 +93,18 @@ void InferenceManager::add(ODInference *od)
 ODInference *InferenceManager::findOd(string name)
 {
 	if (vec.size()>=1) {
-		if (name=="default")
+		if (name=="default") {
+			for (int i=0; i<vec.size(); i++) {
+				if (vec[i]->isDefault()) {
+					return vec[i];
+				}
+			}
 			return vec[0];
-
-		for (int i=0; i<vec.size(); i++) {
-			if (name == vec[i]->getModelName()) {
-				return vec[i];
+		} else {
+			for (int i=0; i<vec.size(); i++) {
+				if (name == vec[i]->getModelName()) {
+					return vec[i];
+				}
 			}
 		}
 	}
@@ -101,11 +112,13 @@ ODInference *InferenceManager::findOd(string name)
 	return NULL;
 }
 
-ODInference::ODInference(int iWidth, int iHeight, int iNumCh,
+
+ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	int score, int iou, string modelName,
 	int numCategory, const char **labels)
 {
 	kModelName = modelName;
+	kTitle = title;
 	kNumCols = iWidth;
 	kNumRows = iHeight;
 	kNumChannels = iNumCh;
@@ -114,6 +127,7 @@ ODInference::ODInference(int iWidth, int iHeight, int iNumCh,
 	kIouThreshold = iou;
 	kCategoryCount = numCategory;
 	kCategoryLabels = labels;
+	kDefault = false;
 }
 
 string ODInference::getClassName(int classId)
@@ -121,10 +135,10 @@ string ODInference::getClassName(int classId)
 	return string(kCategoryLabels[classId]);
 }
 
-MobileNetSSD::MobileNetSSD(int iWidth, int iHeight, int iNumCh,
+MobileNetSSD::MobileNetSSD(string title, int iWidth, int iHeight, int iNumCh,
 	int score, int iou,
 	string modelName, int numCategory, const char **labels):
-	ODInference(iWidth, iHeight, iNumCh, score, iou, 
+	ODInference(title, iWidth, iHeight, iNumCh, score, iou, 
 		modelName, numCategory, labels)
 {
 	kImageMode = INPUT_PADDING;
@@ -364,17 +378,18 @@ class NameCGI : public ODCGI
 		int run(QueryString &qs, ostream &os);
 };
 
-void _returnValue(int width, int height, int score, int iou,
+void _returnValue(string title, int width, int height, int score, int iou,
 	string &modelName, string &result, int ms, ostream &os)
 {
 	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms 
+	   << ",\"title\":" << title << "\""
 	   << ",\"model\":" << "\"" << modelName << "\""
 	   << ",\"width\":" << width << ",\"height\":" << height
 	   << ",\"score\":" << score << ",\"iou\":" << iou
 	   << ",\"detection\":" << result << "}";
 }
-#define returnValue(width, height, score, iou, modelName, result, ms, os, rc) \
-	_returnValue(width, height, score, iou, modelName, result, ms, os); return rc;
+#define returnValue(title, width, height, score, iou, modelName, result, ms, os, rc) \
+	_returnValue(title, width, height, score, iou, modelName, result, ms, os); return rc;
 
 void _returnFail(const char *reason, ostream &os)
 {
@@ -406,7 +421,8 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 			if (infEngine) {
 				int width = 0, height = 0;
 				string result = infEngine->detect(img, po->firstValue(), width, height);
-				returnValue(width, height, infEngine->getScore(), infEngine->getIou(),
+				returnValue(infEngine->getTitle(), width, height,
+					infEngine->getScore(), infEngine->getIou(),
 					infEngine->getModelName(), result, get_current_ticks() - start, os, 0);
 			}
 			// engine not found, fallback to default
@@ -414,8 +430,9 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 			if (infEngine) {
 				int width = 0, height = 0;
 				string result = infEngine->detect(img, po->firstValue(), width, height);
-				returnValue(width, height, infEngine->getScore(), infEngine->getIou(), infEngine->getModelName(),
-					result, get_current_ticks() - start, os, 0);
+				returnValue(infEngine->getTitle(), width, height,
+					infEngine->getScore(), infEngine->getIou(),
+					infEngine->getModelName(), result, get_current_ticks() - start, os, 0);
 			}
 			returnFail("inference engine not found", os, -1);
 		} else {
@@ -433,15 +450,14 @@ int NameCGI::run(QueryString &qs, ostream &os)
 {
     os << "Content-Type: application/json" << endl << endl;
 
-	os << "{[";
+	os << "[";
 	for (int i=0; i<m_im->vec.size(); i++) {
-		m_im->vec[i]->getModelName();
-		os << "\"" << m_im->vec[i]->getModelName() << "\"";
+		os << "\"" << m_im->vec[i]->getTitle() << "\"";
 		if (i<m_im->vec.size()-1) {
 			os << ",";
 		}
 	}
-	os << "]}";
+	os << "]";
 
 	return 0;
 }
@@ -478,20 +494,25 @@ int main(int argc, char **argv)
     }
 	clog << "config loaded from 'models.ini', models:" << endl << sections(reader);
 
-	HttpServer server(".", 8120);
+	HttpServer server(".", 8110);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();
 	for (set<string>::iterator it = sections.begin(); it != sections.end(); ++it) {
+		clog << "load model: " << *it << endl;
 		int width = reader.GetInteger(*it, "width", -1);
 		int height = reader.GetInteger(*it, "height", -1);
 		int channels = reader.GetInteger(*it, "channels", -1);
 		int score = reader.GetInteger(*it, "score", 50);
 		int iou = reader.GetInteger(*it, "iou", 50);
+		int isDefault = reader.GetInteger(*it, "default", 0);
+		string title = reader.Get(*it, "title", "unknown");
 		if (width < 0 || height < 0 || channels < 0)
 			continue;
-		MobileNetSSD *ssd = new MobileNetSSD(width, height, channels,
+		MobileNetSSD *ssd = new MobileNetSSD(title, width, height, channels,
 			score, iou, *it, COUNT_LABELS, cocoLabels);
+		if (isDefault)
+			ssd->setDefault();
 		im.add(ssd);
 	}
 
