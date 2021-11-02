@@ -11,6 +11,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 find_package(OpenCV REQUIRED)
+find_package(Boost REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 add_executable(ssd_mobilenet_detection "")
@@ -59,4 +60,5 @@ target_link_libraries(
   farmhash
   cgicc
   ${OpenCV_LIBS}
+  ${Boost_PROGRAM_OPTIONS_LIBRARY}
 )

@@ -9,6 +9,7 @@
 #include "nms.h"
 #include "util.h"
 #include "INIReader.h"
+#include <boost/algorithm/string.hpp>
 
 #define INPUT_ORIGINAL	0
 #define INPUT_CROP		1
@@ -32,7 +33,7 @@ class ODInference
 		int kIouThreshold;
 		bool kDefault;
 		string kPostProcess;
-		const char **kCategoryLabels;
+		vector<string> kCategoryLabels;
 		std::unique_ptr<tflite::Interpreter> interpreter;
 		tflite::StderrReporter my_error_reporter;
 		std::unique_ptr<tflite::FlatBufferModel> model;
@@ -42,7 +43,7 @@ class ODInference
 	public:
 		ODInference(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
-			int numCategory, const char **labels);
+			int numCategory, vector<string> &words);
 		virtual ~ODInference();
 
 		void modelSetup();
@@ -62,7 +63,7 @@ class MobileNetSSD : public ODInference
 	public:
 		MobileNetSSD(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
-			int numCategory, const char **labels);
+			int numCategory, vector<string> &words);
 };
 
 class InferenceManager
@@ -117,7 +118,7 @@ ODInference *InferenceManager::findOd(string name)
 
 ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	int score, int iou, string modelName,
-	int numCategory, const char **labels)
+	int numCategory, vector<string> &words)
 {
 	kModelName = modelName;
 	kTitle = title;
@@ -128,7 +129,7 @@ ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	kScoreThreshold = score;
 	kIouThreshold = iou;
 	kCategoryCount = numCategory;
-	kCategoryLabels = labels;
+	kCategoryLabels = words;
 	kDefault = false;
 	pthread_mutex_init(&m_mutex, NULL);
 }
@@ -145,7 +146,7 @@ string ODInference::getClassName(int classId)
 
 MobileNetSSD::MobileNetSSD(string title, int iWidth, int iHeight, int iNumCh,
 	int score, int iou,
-	string modelName, int numCategory, const char **labels):
+	string modelName, int numCategory,  vector<string> &labels):
 	ODInference(title, iWidth, iHeight, iNumCh, score, iou, 
 		modelName, numCategory, labels)
 {
@@ -525,7 +526,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-	HttpServer server(".", 8110);
+	HttpServer server(".", 8120);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();
@@ -538,10 +539,20 @@ int main(int argc, char **argv)
 		int isDefault = reader.GetInteger(*it, "default", 0);
 		string title = reader.Get(*it, "title", "unknown");
 		string post = reader.Get(*it,"post", "ssd");
-		if (width < 0 || height < 0 || channels < 0)
+		if (width < 0 || height < 0 || channels < 0) {
+			clog << "fail in loading model (width/height/channels) [" << *it << "]" << endl;
 			continue;
+		}
+		string labels = reader.Get(*it, "classes", "");
+		vector<string> words;
+		boost::split(words, labels, boost::is_any_of(","), boost::token_compress_on);
+		if (words.size() <= 1) {
+			clog << "fail in loading model number of labels <= 1" << endl;
+			continue;
+		}
+
 		MobileNetSSD *ssd = new MobileNetSSD(title, width, height, channels,
-			score, iou, *it, COUNT_LABELS, cocoLabels);
+			score, iou, *it, words.size(), words);
 		if (isDefault)
 			ssd->setDefault();
 
