@@ -107,7 +107,6 @@ void ImageClass::SortBoxes()
 #if 1
     // bubble sort
     int numBox = boxArray.size();
-    printf("Sort numbox=%d\n", numBox);
     for (int i=0; i<numBox-1; i++) {
         for (int j=i+1; j<numBox; j++) {
             if (boxArray[i] < boxArray[j]) {

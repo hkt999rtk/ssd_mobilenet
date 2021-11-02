@@ -158,7 +158,7 @@ void ODInference::modelSetup()
 {
 	tflite::ErrorReporter* error_reporter = nullptr;
 	error_reporter = &my_error_reporter;
-	string filename = kModelName + "/model.tflite";
+	string filename = "deploy/" + kModelName + "/model.tflite";
 	model = tflite::FlatBufferModel::BuildFromFile(filename.c_str());
 
 	if ( !model ) {
@@ -379,7 +379,7 @@ string ODInference::detect(Mat &img, const string &output,
 	string json = nmsCall.packJson();
 
 	auto rc = imwrite(output, outputImg);
-	clog << "write image to " << output << endl;
+	clog << "output: " << output << endl;
 	width = outputImg.cols;
 	height = outputImg.rows;
 	pthread_mutex_unlock(&m_mutex);
