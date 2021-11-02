@@ -1,5 +1,7 @@
 #include "nms.h"
 #include <cstdio>
+#include <vector>
+#include <algorithm>
 
 #define MIN(a,b) ((a<b)?a:b)
 #define MAX(a,b) ((a<b)?b:a)
@@ -71,10 +73,27 @@ int BoundingBox::IoU(BoundingBox &input)
     return (interArea * 100) / (Area() + input.Area() - interArea); /* IoU */
 }
 
-bool BoundingBox::operator<( BoundingBox &box )
+void swap(BoundingBox &a, BoundingBox &b)
+{
+
+}
+
+#if 0
+bool BoundingBox::operator <(const BoundingBox& box) const
 {
     return score < box.score;
 }
+
+bool BoundingBox::operator==( BoundingBox &box )
+{
+    return score == box.score;
+}
+
+bool BoundingBox::operator>( BoundingBox &box )
+{
+    return score > box.score;
+}
+#endif
 
 int ImageClass::AddBoundingBox( BoundingBox &box )
 {
@@ -84,8 +103,11 @@ int ImageClass::AddBoundingBox( BoundingBox &box )
 
 void ImageClass::SortBoxes()
 {
+    //sort(boxArray.begin(), boxArray.end());
+#if 1
     // bubble sort
     int numBox = boxArray.size();
+    printf("Sort numbox=%d\n", numBox);
     for (int i=0; i<numBox-1; i++) {
         for (int j=i+1; j<numBox; j++) {
             if (boxArray[i] < boxArray[j]) {
@@ -95,6 +117,7 @@ void ImageClass::SortBoxes()
             }
         }
     }
+#endif
 }
 
 void ImageClass::Go(int overlayThreshold)

@@ -20,10 +20,15 @@ class BoundingBox {
         BoundingBox(int minX, int minY, int maxX, int maxY, int score, int classId);
         BoundingBox(const BoundingBox &c) { minX = c.minX; minY = c.minY; maxX = c.maxX; maxY = c.maxY; score = c.score; classId = c.classId; }
         ~BoundingBox() {}
-        BoundingBox &operator= (BoundingBox &box);
-        BoundingBox &operator*= (BoundingBox &box);
-        BoundingBox &operator+= (BoundingBox &box);
+        BoundingBox &operator=(BoundingBox &box);
+        BoundingBox &operator*=(BoundingBox &box);
+        BoundingBox &operator+=(BoundingBox &box);
+        bool operator <(const BoundingBox& box) const { return score < box.score; }
+        #if 0
+        bool operator==(BoundingBox &box);
         bool operator<(BoundingBox &box);
+        bool operator>(BoundingBox &box);
+        #endif
 
         inline int GetClassId() { return classId; }
 
