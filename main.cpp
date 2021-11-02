@@ -507,13 +507,21 @@ int NameCGI::run(QueryString &qs, ostream &os)
 
 int main(int argc, char **argv)
 {
+	int port = 8110;
+	if (argc>=2) {
+		if (strcmp(argv[1], "debug")==0) {
+			clog << "start debug mode" << endl;
+			port = 8120;
+		}
+	}
+
 	INIReader reader("models.ini");
 	if (reader.ParseError() < 0) {
         clog << "error: can't load 'models.ini'\n";
         return 1;
     }
 
-	HttpServer server(".", 8110);
+	HttpServer server(".", port);
 	InferenceManager im;
 
 	set<string> sections = reader.Sections();

@@ -28,7 +28,7 @@ class BoundingBox {
         int IoU(BoundingBox &input); /* 100% ratio */
 };
 
-#define MAX_BOXES       (20)
+#define MAX_BOXES       (120)
 #define MAX_CLASSES     (90)
 #define IOU_THRESHOLD   (50)
 
