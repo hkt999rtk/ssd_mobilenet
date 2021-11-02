@@ -71,23 +71,21 @@ int BoundingBox::IoU(BoundingBox &input)
     return (interArea * 100) / (Area() + input.Area() - interArea); /* IoU */
 }
 
-bool BoundingBox::operator<(BoundingBox &box)
+bool BoundingBox::operator<( BoundingBox &box )
 {
     return score < box.score;
 }
 
 int ImageClass::AddBoundingBox( BoundingBox &box )
 {
-    if (numBox >= MAX_BOXES)
-        return -1;
-
-    boxArray[numBox ++ ] = box;
+    boxArray.push_back(box);
     return 0;
 }
 
 void ImageClass::SortBoxes()
 {
     // bubble sort
+    int numBox = boxArray.size();
     for (int i=0; i<numBox-1; i++) {
         for (int j=i+1; j<numBox; j++) {
             if (boxArray[i] < boxArray[j]) {
@@ -103,7 +101,7 @@ void ImageClass::Go(int overlayThreshold)
 {
     SortBoxes();
 
-    int pivot = 0;
+    int pivot = 0, numBox = boxArray.size();
     while (pivot < numBox) {
         if (boxArray[pivot].IsDeleted()) {
             pivot++;
@@ -125,12 +123,13 @@ void ImageClass::Go(int overlayThreshold)
             }
             candidate++;
         }
-        pickArray[numPicked++] = pickedBox;
+        pickArray.push_back(pickedBox);
     }
 }
 
 void ImageClass::Dump(NmsCb &cb)
 {
+    int numPicked = pickArray.size();
     for (int i=0; i<numPicked; i++) {
         BoundingBox b = pickArray[i];
         cb.callback(b);
@@ -139,26 +138,26 @@ void ImageClass::Dump(NmsCb &cb)
 
 int NmsPostProcess::AddBoundingBox( BoundingBox &box )
 {
-    for (int i=0; i<numClasses; i++) {
+    // TODO: rewrite this with map structure to eliminitate the slow linear search
+    for (int i=0; i<imageClass.size(); i++) {
         if (imageClass[i].GetClassId() == box.GetClassId()) {
             imageClass[i].AddBoundingBox(box);
             return 0;
         }
     }
 
-    if ( numClasses >= MAX_CLASSES )
-        return -1; /* fail */
+    ImageClass ic;
+    ic.SetClassId( box.GetClassId() );
+    ic.AddBoundingBox( box );
 
-    imageClass[numClasses].SetClassId( box.GetClassId());
-    imageClass[numClasses].AddBoundingBox( box );
-    numClasses++;
+    imageClass.push_back(ic);
 
     return 0;
 }
 
 void NmsPostProcess::Go(int overlayThreshold, NmsCb &cb)
 {
-    for (int i=0; i<numClasses; i++) {
+    for (int i=0; i<imageClass.size(); i++) {
         imageClass[i].Go(overlayThreshold);
         imageClass[i].Dump(cb);
     }

@@ -1,5 +1,11 @@
 #pragma once
 
+#include <vector>
+//#define MAX_CLASSES     (90)
+#define IOU_THRESHOLD   (50)
+
+using namespace std;
+
 class BoundingBox {
     public:
         int minX;
@@ -28,10 +34,6 @@ class BoundingBox {
         int IoU(BoundingBox &input); /* 100% ratio */
 };
 
-#define MAX_BOXES       (120)
-#define MAX_CLASSES     (90)
-#define IOU_THRESHOLD   (50)
-
 class NmsCb {
     public:
         NmsCb() {}
@@ -43,14 +45,12 @@ class NmsCb {
 
 class ImageClass {
     protected:
-        BoundingBox boxArray[MAX_BOXES];
-        BoundingBox pickArray[MAX_BOXES];
-        int numBox;
-        int numPicked;
+        vector<BoundingBox> boxArray;
+        vector<BoundingBox> pickArray;
         int classId;
 
     public:
-        ImageClass() { numBox = 0; numPicked = 0; classId = -1; }
+        ImageClass() { classId = -1; }
         ~ImageClass() {}
         int AddBoundingBox( BoundingBox &box );
 
@@ -68,11 +68,10 @@ class ImageClass {
 
 class NmsPostProcess {
     protected:
-        ImageClass imageClass[MAX_CLASSES];
-        int numClasses;
+        vector<ImageClass> imageClass;
 
     public:
-        NmsPostProcess() { numClasses = 0; }
+        NmsPostProcess() {}
         ~NmsPostProcess() {}
 
     public:
