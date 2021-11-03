@@ -64,36 +64,27 @@ void BoundingBox::Print()
     printf("(%d,%d)-(%d,%d)\r\n", minX, minY, maxX, maxY);
 }
 
+bool BoundingBox::IsOverlap(BoundingBox &dst)
+{
+    BoundingBox src(*this);
+    if ((src.maxX - dst.minX > 0 && src.maxY - dst.minY > 0) &&
+        (dst.maxX - src.minX > 0 && dst.maxY - src.minY > 0)) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
 int BoundingBox::IoU(BoundingBox &input)
 {
+    if (!IsOverlap(input))
+        return 0;
     BoundingBox inter(*this);
     inter *= input;
     int interArea = inter.Area();
 
     return (interArea * 100) / (Area() + input.Area() - interArea); /* IoU */
 }
-
-void swap(BoundingBox &a, BoundingBox &b)
-{
-
-}
-
-#if 0
-bool BoundingBox::operator <(const BoundingBox& box) const
-{
-    return score < box.score;
-}
-
-bool BoundingBox::operator==( BoundingBox &box )
-{
-    return score == box.score;
-}
-
-bool BoundingBox::operator>( BoundingBox &box )
-{
-    return score > box.score;
-}
-#endif
 
 int ImageClass::AddBoundingBox( BoundingBox &box )
 {
@@ -130,7 +121,7 @@ void ImageClass::Go(int overlayThreshold)
             continue;
         }
         BoundingBox pickedBox = boxArray[pivot++];
-        int candidate = 0;
+        int candidate = pivot;
         while (candidate < numBox) {
             if (boxArray[candidate].IsDeleted()) {
                 candidate++;
@@ -138,10 +129,7 @@ void ImageClass::Go(int overlayThreshold)
             }
             int iou = pickedBox.IoU( boxArray[candidate] );
             if (iou > overlayThreshold) {
-                pickedBox += boxArray[candidate];
                 boxArray[candidate].Delete();
-                candidate = 0; // computate all iou of boxes again
-                continue;
             }
             candidate++;
         }

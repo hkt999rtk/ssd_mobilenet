@@ -24,11 +24,7 @@ class BoundingBox {
         BoundingBox &operator*=(BoundingBox &box);
         BoundingBox &operator+=(BoundingBox &box);
         bool operator <(const BoundingBox& box) const { return score < box.score; }
-        #if 0
-        bool operator==(BoundingBox &box);
-        bool operator<(BoundingBox &box);
-        bool operator>(BoundingBox &box);
-        #endif
+        bool IsOverlap(BoundingBox &dst);
 
         inline int GetClassId() { return classId; }
 
