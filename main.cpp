@@ -444,6 +444,8 @@ void _returnFail(const char *reason, ostream &os)
 
 int DetectCGI::run(QueryString &qs, ostream &os)
 {
+	float x_left = 0.0, x_right = 0.0, y_top = 0.0, y_bottom = 0.0;
+
     os << "Content-Type: application/json" << endl << endl;
 	if (qs.numParams()>=1) {
 		if (qs.hasParam("input") && qs.hasParam("output")) {
@@ -460,6 +462,29 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 				auto pi = qs.getParam("model");
 				modelName = pi->firstValue();
 			}
+			if (qs.hasParam("x_left")) {
+				auto pi = qs.getParam("x_left");
+				string sx_left = pi->firstValue();
+				x_left = stof(sx_left);
+			}
+			if (qs.hasParam("x_right")) {
+				auto pi = qs.getParam("x_right");
+				string sx_right = pi->firstValue();
+				x_right = stof(sx_right);
+			}
+			if (qs.hasParam("y_top")) {
+				auto pi = qs.getParam("y_top");
+				string sy_top = pi->firstValue();
+				y_top = stof(sy_top);
+			}
+			if (qs.hasParam("y_bottom")) {
+				auto pi = qs.getParam("y_bottom");
+				string sy_bottom = pi->firstValue();
+				y_bottom = stof(sy_bottom);
+			}
+
+			Rect cropRect(img.cols * x_left, img.rows * y_top, img.cols * (1.0-x_left-x_right), img.rows * (1.0-y_top-y_bottom));
+			img = Mat(img, cropRect);
 			ODInference *infEngine = m_im->findOd(modelName);
 			if (infEngine) {
 				int width = 0, height = 0;
