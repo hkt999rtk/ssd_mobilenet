@@ -213,6 +213,12 @@ int NmsProc::callback(BoundingBox &bb)
 	rectangle(*pImage, rect, Scalar(180,105,255), 2);
 
 #if 0
+	printf("w=%d, h=%d\n", pImage->cols, pImage->rows);
+	printf("boundbox xmin=%d, ymin=%d, xmax=%d, ymax=%d\n", 
+		bb.minX, bb.minY, bb.maxX, bb.maxY);
+#endif
+
+#if 0
 	char s[128];
 	snprintf(s, sizeof(s), "%s (%d%%)", kCategoryLabels[bb.classId], bb.score);
 	putText(*pImage, s, Point(bb.minX, bb.minY-5),
@@ -229,8 +235,8 @@ string NmsProc::packJson()
 	s << "[";
 	for (int i=0; i<bboxVec.size(); i++) {
 		BoundingBox bb = bboxVec[i];
-		s << "{\"minx\":" << bb.minX << ", \"maxx\":" << bb.maxX <<
-		     ", \"miny\":" << bb.minY << ", \"maxy\":" << bb.maxY <<
+		s << "{\"minx\":" << bb.minX - x_offset << ", \"maxx\":" << bb.maxX - x_offset <<
+		     ", \"miny\":" << bb.minY - y_offset << ", \"maxy\":" << bb.maxY - y_offset <<
 			 ", \"score\":" << bb.score << 
 			 ", \"id\":" << bb.classId <<
 			 ", \"class\":\"" << infEngine->getClassName(bb.classId) << "\"}";

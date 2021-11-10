@@ -15,6 +15,7 @@ find_package(Boost REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 add_executable(ssd_mobilenet_detection "")
+add_executable(gentest "")
 
 target_include_directories(ssd_mobilenet_detection
   PRIVATE
@@ -36,6 +37,11 @@ target_sources(ssd_mobilenet_detection
   ${CMAKE_CURRENT_LIST_DIR}/tinyhttpd/tinyhttpd.cpp
   ${CMAKE_CURRENT_LIST_DIR}/tinyhttpd/httpserver.cpp
   ${CMAKE_CURRENT_LIST_DIR}/tinyhttpd/http_util.cpp
+)
+
+target_sources(gentest
+	PRIVATE
+	${CMAKE_CURRENT_LIST_DIR}/gentest.cpp
 )
 
 target_link_directories(
