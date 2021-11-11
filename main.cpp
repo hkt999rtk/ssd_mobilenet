@@ -175,7 +175,58 @@ void ODInference::modelSetup()
 	}
 }
 
-#define MAX_NUM_BOX 100
+Mat gammaCorrection(Mat &image, float gamma)
+{
+	uint8_t gammaMap[256];
+	for (int i=0; i<256; i++) {
+        gammaMap[i] = saturate_cast<uint8_t>(pow(i / 255.0, gamma) * 255.0);
+	}
+	Mat dstImage;
+    cvtColor(image, dstImage, COLOR_BGR2YCrCb);
+
+    // Split the image into 3 channels; Y, Cr and Cb channels respectively and store it in a std::vector
+    vector<Mat> vec_channels;
+    split(dstImage, vec_channels);
+
+	// LUT
+	uint8_t *wa = vec_channels[0].data;
+	int write_count = vec_channels[0].cols * vec_channels[0].rows;
+	while (write_count-->0) {
+		*wa = gammaMap[*wa];
+		wa++;
+	}
+
+    //Merge 3 channels in the vector to form the color image in YCrCB color space
+    merge(vec_channels, dstImage);
+        
+    //Convert the histogram equalized image from YCrCb to BGR color space again
+    cvtColor(dstImage, dstImage, COLOR_YCrCb2BGR);
+
+	return dstImage;
+}
+
+Mat histEq(Mat &image)
+{
+    //Convert the image from BGR to YCrCb color space
+    Mat hist_equalized_image;
+    cvtColor(image, hist_equalized_image, COLOR_BGR2YCrCb);
+
+    //Split the image into 3 channels; Y, Cr and Cb channels respectively and store it in a std::vector
+    vector<Mat> vec_channels;
+    split(hist_equalized_image, vec_channels);
+
+    //Equalize the histogram of only the Y channel
+    equalizeHist(vec_channels[0], vec_channels[0]);
+
+    //Merge 3 channels in the vector to form the color image in YCrCB color space
+    merge(vec_channels, hist_equalized_image);
+        
+    //Convert the histogram equalized image from YCrCb to BGR color space again
+    cvtColor(hist_equalized_image, hist_equalized_image, COLOR_YCrCb2BGR);
+
+	return hist_equalized_image;
+}
+
 class NmsProc : public NmsCb
 {
 	protected:
@@ -210,7 +261,12 @@ void NmsProc::addBox(BoundingBox bbox)
 int NmsProc::callback(BoundingBox &bb)
 {
 	Rect rect(bb.minX-x_offset, bb.minY-y_offset, bb.maxX-bb.minX+1, bb.maxY-bb.minY+1);
-	rectangle(*pImage, rect, Scalar(180,105,255), 2);
+
+	if (infEngine->getClassName(bb.classId) == "car") {
+		rectangle(*pImage, rect, Scalar(180,105,255), 2); // RGB
+	} else {
+		rectangle(*pImage, rect, Scalar(70, 255, 70), 2);
+	}
 
 #if 0
 	printf("w=%d, h=%d\n", pImage->cols, pImage->rows);
@@ -252,12 +308,13 @@ string NmsProc::packJson()
 string ODInference::detect(Mat &img, const string &output,
 	int &width, int &height)
 {
-	Mat dstImg, outputImg;
+	Mat dstImg, outputImg; // outputImg is the output one to draw rectange on
 	float x_ratio, y_ratio;
 	int x_offset = 0, y_offset = 0;
 
 	switch (kImageMode) {
 		case INPUT_ORIGINAL:
+			outputImg = img;
 			resize(img, dstImg, Size(kNumCols, kNumRows));
 			x_ratio = (float)img.cols / (float)kNumCols;
 			y_ratio = (float)img.rows / (float)kNumRows;
@@ -296,7 +353,7 @@ string ODInference::detect(Mat &img, const string &output,
 			}
 			break;
 	}
-    cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
+	cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
 
 	pthread_mutex_lock(&m_mutex);
 	int8_t *int8_data = 0;
@@ -457,7 +514,7 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 		if (qs.hasParam("input") && qs.hasParam("output")) {
 			auto pi = qs.getParam("input");
 			Mat img = imread(pi->firstValue());
-			clog << "input:" << pi->firstValue() << endl;
+			clog << "input: " << pi->firstValue() << endl;
 			if (!img.data) {
 				returnFail("error: canot read file", os, -1);
 			}

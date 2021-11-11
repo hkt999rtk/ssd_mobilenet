@@ -9,6 +9,12 @@ config:
 	@echo "Enable ssd_mobilenet_v3 service"
 	@sudo systemctl enable ssd_mobilenet_v3.service
 
+quick_install:
+	@echo "Installation path" $(INS_PATH)
+	@cp build/ssd_mobilenet_detection $(INS_PATH)
+	@cp models.ini $(INS_PATH)
+	@echo "Done"
+
 install:
 	@echo "Installation path" $(INS_PATH)
 	@mkdir -p $(INS_PATH)/deploy

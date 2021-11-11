@@ -1,3 +1,3 @@
 #!/bin/sh
-sudo make stop;sudo make install;sudo make start
+sudo make stop;sudo make quick_install;sudo make start
 
