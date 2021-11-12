@@ -546,7 +546,13 @@ int DetectCGI::run(QueryString &qs, ostream &os)
 				y_bottom = stof(sy_bottom);
 			}
 
-			Rect cropRect(img.cols * x_left, img.rows * y_top, img.cols * (1.0-x_left-x_right), img.rows * (1.0-y_top-y_bottom));
+			int rectW = img.cols * (1.0-x_left-x_right);
+			int rectH = img.rows * (1.0-y_top-y_bottom);
+
+			// keep width and height are both even
+			if (rectW%2 != 0) rectW--;
+			if (rectH%2 != 0) rectH--;
+			Rect cropRect(img.cols * x_left, img.rows * y_top, rectW, rectH);
 			img = Mat(img, cropRect);
 			ODInference *infEngine = m_im->findOd(modelName);
 			if (infEngine) {
