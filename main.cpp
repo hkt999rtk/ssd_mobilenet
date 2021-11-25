@@ -1,6 +1,7 @@
 #include <opencv2/opencv.hpp>
 #include <cstdio>
 #include <unistd.h>
+#include <sys/types.h>
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
@@ -70,6 +71,7 @@ class InferenceManager
 {
 	public:
 		vector<ODInference *> vec;
+		int m_isBusy;
 
 	public:
 		InferenceManager();
@@ -79,10 +81,12 @@ class InferenceManager
 		void add(ODInference *od);
 		ODInference *findOd(string name);
 		ODInference *getDefault();
+		inline bool isBusy() { return (m_isBusy==1) ? true : false; }
 };
 
 InferenceManager::InferenceManager()
 {
+	m_isBusy = 0;
 }
 
 InferenceManager::~InferenceManager()
@@ -484,6 +488,16 @@ class NameCGI : public ODCGI
 		int run(QueryString &qs, ostream &os);
 };
 
+class IsBusy : public ODCGI
+{
+	InferenceManager *m_im;
+	public:
+		IsBusy(InferenceManager *m_im):ODCGI(m_im) {}
+
+	public:
+		int run(QueryString &qs, ostream &os);
+};
+
 void _returnValue(string title, int width, int height, int score, int iou,
 	string &modelName, string &result, int ms, ostream &os)
 {
@@ -505,9 +519,17 @@ void _returnFail(const char *reason, ostream &os)
 
 #define returnFail(reason, os, rc) _returnFail(reason, os); return rc;
 
+class AutoFree {
+	public:
+		InferenceManager *m_im;
+		AutoFree(InferenceManager *im) { m_im = im; m_im->m_isBusy = 1; }
+		~AutoFree() { m_im->m_isBusy = 0; }
+};
+
 int DetectCGI::run(QueryString &qs, ostream &os)
 {
 	float x_left = 0.0, x_right = 0.0, y_top = 0.0, y_bottom = 0.0;
+	AutoFree af(m_im);
 
     os << "Content-Type: application/json" << endl << endl;
 	if (qs.numParams()>=1) {
@@ -599,13 +621,25 @@ int NameCGI::run(QueryString &qs, ostream &os)
 	return 0;
 }
 
+int IsBusy::run(QueryString &qs, ostream &os)
+{
+	os << "Content-Type: application/json" << endl << endl;
+	if (m_im->isBusy()) {
+		os << "{\"status\":\"busy\"}" << endl;
+	} else {
+		os << "{\"status\":\"idle\"}" << endl;
+	}
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
-	int port = 8110;
+	int start_port = 8110;
 	if (argc>=2) {
 		if (strcmp(argv[1], "debug")==0) {
 			clog << "start debug mode" << endl;
-			port = 8120;
+			start_port = 8210;
 		}
 	}
 
@@ -615,9 +649,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-	HttpServer server(".", port);
 	InferenceManager im;
-
 	set<string> sections = reader.Sections();
 	for (set<string>::iterator it = sections.begin(); it != sections.end(); ++it) {
 		int width = reader.GetInteger(*it, "width", -1);
@@ -659,10 +691,22 @@ int main(int argc, char **argv)
 
     DetectCGI detectCGI(&im);
 	NameCGI nameCGI(&im);
-    
+	IsBusy isBusyCgi(&im);
+
+	// create 3 process
+	for (int i=0; i<3; i++) {
+		if (fork()==0) {
+			// child
+			start_port ++;
+			break;
+		}
+	}
+
+	HttpServer server(".", start_port);
     server.registerCgi("detect", detectCGI);
 	server.registerCgi("model_list", nameCGI);
-	server.run(5); // acceptance 5 current request
+	server.registerCgi("is_busy", isBusyCgi);
+	server.run(3); // acceptance 5 current request
 
 	return 0;
 }
