@@ -490,7 +490,6 @@ class NameCGI : public ODCGI
 
 class IsBusy : public ODCGI
 {
-	InferenceManager *m_im;
 	public:
 		IsBusy(InferenceManager *m_im):ODCGI(m_im) {}
 
@@ -624,6 +623,7 @@ int NameCGI::run(QueryString &qs, ostream &os)
 int IsBusy::run(QueryString &qs, ostream &os)
 {
 	os << "Content-Type: application/json" << endl << endl;
+
 	if (m_im->isBusy()) {
 		os << "{\"status\":\"busy\"}" << endl;
 	} else {
@@ -693,6 +693,7 @@ int main(int argc, char **argv)
 	NameCGI nameCGI(&im);
 	IsBusy isBusyCgi(&im);
 
+#if 0
 	// create 3 process
 	for (int i=0; i<3; i++) {
 		if (fork()==0) {
@@ -701,6 +702,7 @@ int main(int argc, char **argv)
 			break;
 		}
 	}
+#endif
 
 	HttpServer server(".", start_port);
     server.registerCgi("detect", detectCGI);
