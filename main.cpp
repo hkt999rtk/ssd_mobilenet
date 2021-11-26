@@ -71,7 +71,8 @@ class InferenceManager
 {
 	public:
 		vector<ODInference *> vec;
-		int m_isBusy;
+		vector<ODInference *> defaultVec;
+		int m_defaultCount;
 
 	public:
 		InferenceManager();
@@ -81,12 +82,11 @@ class InferenceManager
 		void add(ODInference *od);
 		ODInference *findOd(string name);
 		ODInference *getDefault();
-		inline bool isBusy() { return (m_isBusy==1) ? true : false; }
 };
 
 InferenceManager::InferenceManager()
 {
-	m_isBusy = 0;
+	m_defaultCount = 0;
 }
 
 InferenceManager::~InferenceManager()
@@ -96,18 +96,21 @@ InferenceManager::~InferenceManager()
 void InferenceManager::add(ODInference *od)
 {
 	vec.push_back(od);
+	if (od->isDefault()) {
+		defaultVec.push_back(od);
+	}
 }
 
 ODInference *InferenceManager::findOd(string name)
 {
 	if (vec.size()>=1) {
 		if (name=="default") {
-			for (int i=0; i<vec.size(); i++) {
-				if (vec[i]->isDefault()) {
-					return vec[i];
-				}
+			if (defaultVec.size() == 0) {
+				return vec[0];
 			}
-			return vec[0];
+			ODInference *of = defaultVec[m_defaultCount];
+			m_defaultCount = (m_defaultCount+1) % defaultVec.size();
+			return of;
 		} else {
 			for (int i=0; i<vec.size(); i++) {
 				if (name == vec[i]->getTitle()) {
@@ -488,15 +491,6 @@ class NameCGI : public ODCGI
 		int run(QueryString &qs, ostream &os);
 };
 
-class IsBusy : public ODCGI
-{
-	public:
-		IsBusy(InferenceManager *m_im):ODCGI(m_im) {}
-
-	public:
-		int run(QueryString &qs, ostream &os);
-};
-
 void _returnValue(string title, int width, int height, int score, int iou,
 	string &modelName, string &result, int ms, ostream &os)
 {
@@ -518,17 +512,9 @@ void _returnFail(const char *reason, ostream &os)
 
 #define returnFail(reason, os, rc) _returnFail(reason, os); return rc;
 
-class AutoFree {
-	public:
-		InferenceManager *m_im;
-		AutoFree(InferenceManager *im) { m_im = im; m_im->m_isBusy = 1; }
-		~AutoFree() { m_im->m_isBusy = 0; }
-};
-
 int DetectCGI::run(QueryString &qs, ostream &os)
 {
 	float x_left = 0.0, x_right = 0.0, y_top = 0.0, y_bottom = 0.0;
-	AutoFree af(m_im);
 
     os << "Content-Type: application/json" << endl << endl;
 	if (qs.numParams()>=1) {
@@ -620,26 +606,13 @@ int NameCGI::run(QueryString &qs, ostream &os)
 	return 0;
 }
 
-int IsBusy::run(QueryString &qs, ostream &os)
-{
-	os << "Content-Type: application/json" << endl << endl;
-
-	if (m_im->isBusy()) {
-		os << "{\"status\":\"busy\"}" << endl;
-	} else {
-		os << "{\"status\":\"idle\"}" << endl;
-	}
-
-	return 0;
-}
-
 int main(int argc, char **argv)
 {
 	int start_port = 8110;
 	if (argc>=2) {
 		if (strcmp(argv[1], "debug")==0) {
 			clog << "start debug mode" << endl;
-			start_port = 8210;
+			start_port = 8120;
 		}
 	}
 
@@ -691,24 +664,11 @@ int main(int argc, char **argv)
 
     DetectCGI detectCGI(&im);
 	NameCGI nameCGI(&im);
-	IsBusy isBusyCgi(&im);
-
-#if 0
-	// create 3 process
-	for (int i=0; i<3; i++) {
-		if (fork()==0) {
-			// child
-			start_port ++;
-			break;
-		}
-	}
-#endif
 
 	HttpServer server(".", start_port);
     server.registerCgi("detect", detectCGI);
 	server.registerCgi("model_list", nameCGI);
-	server.registerCgi("is_busy", isBusyCgi);
-	server.run(3); // acceptance 5 current request
+	server.run(5); // acceptance 5 current request
 
 	return 0;
 }
