@@ -322,7 +322,7 @@ string ODInference::detect(Mat &img, const string &output,
 	switch (kImageMode) {
 		case INPUT_ORIGINAL:
 			outputImg = img;
-			resize(img, dstImg, Size(kNumCols, kNumRows));
+			resize(img, dstImg, Size(kNumCols, kNumRows), 0, 0, cv::INTER_AREA);
 			x_ratio = (float)img.cols / (float)kNumCols;
 			y_ratio = (float)img.rows / (float)kNumRows;
 			break;
@@ -338,7 +338,7 @@ string ODInference::detect(Mat &img, const string &output,
 				outputImg = Mat(img, cropRect);
 				x_ratio = (float)outputImg.cols / (float)kNumCols;
 				y_ratio = (float)outputImg.rows / (float)kNumRows;
-				resize(outputImg, dstImg, Size(kNumCols, kNumRows));
+				resize(outputImg, dstImg, Size(kNumCols, kNumRows), 0, 0, cv::INTER_AREA);
 			}
 			break;
 
@@ -355,7 +355,7 @@ string ODInference::detect(Mat &img, const string &output,
 				}
 				x_ratio = (float)dst.cols / (float)kNumCols;
 				y_ratio = (float)dst.rows / (float)kNumRows;
-				resize(dst, dstImg, Size(kNumCols, kNumRows));
+				resize(dst, dstImg, Size(kNumCols, kNumRows), 0, 0, cv::INTER_AREA);
 				outputImg = img;
 			}
 			break;
