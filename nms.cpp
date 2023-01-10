@@ -30,6 +30,9 @@ BoundingBox &BoundingBox::operator*=(BoundingBox &input)
     minY = MAX(minY, input.minY);
     maxX = MIN(maxX, input.maxX);
     maxY = MIN(maxY, input.maxY);
+    if ((minX > maxX) || (minY > maxY)) {
+        minX = minY = maxX = maxY = 0;
+    }
 
     return *this;
 }
