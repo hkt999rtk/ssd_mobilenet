@@ -2,6 +2,9 @@
 #include <cstdio>
 #include <unistd.h>
 #include <sys/types.h>
+#include <mutex>
+#include <memory>
+#include <stdexcept>
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
@@ -9,6 +12,7 @@
 #include "httpserver.h"
 #include "nms.h"
 #include "util.h"
+#include "request_params.h"
 #include "INIReader.h"
 #include <boost/algorithm/string.hpp>
 
@@ -39,24 +43,24 @@ class ODInference
 		tflite::StderrReporter my_error_reporter;
 		std::unique_ptr<tflite::FlatBufferModel> model;
 		tflite::ops::builtin::BuiltinOpResolver resolver;
-		pthread_mutex_t m_mutex;
+		std::mutex m_mutex;
 
 	public:
 		ODInference(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
-			int numCategory, vector<string> &words);
+			int numCategory, const vector<string> &words);
 		virtual ~ODInference();
 
 		void modelSetup();
-		string &getModelName() { return kModelName; }
-		inline string getTitle() { return kTitle; }
+		const string &getModelName() const { return kModelName; }
+		const string &getTitle() const { return kTitle; }
 		string detect(Mat &img, const string &output, int &width, int &height);
-		inline int getScore() { return kScoreThreshold; }
-		inline int getIou() { return kIouThreshold; }
-		inline bool isDefault() { return kDefault; }
+		int getScore() const { return kScoreThreshold; }
+		int getIou() const { return kIouThreshold; }
+		bool isDefault() const { return kDefault; }
 		inline void setDefault() { kDefault = true; }
-		inline void setPostProcess(string pp) { kPostProcess = pp; }
-		virtual string getClassName(int classId);
+		void setPostProcess(const string &pp) { kPostProcess = pp; }
+		virtual string getClassName(int classId) const;
 };
 
 class MobileNetSSD : public ODInference
@@ -64,24 +68,24 @@ class MobileNetSSD : public ODInference
 	public:
 		MobileNetSSD(string title, int iWidth, int iHeight, int iNumCh,
 			int score, int iou, string modelName,
-			int numCategory, vector<string> &words);
+			int numCategory, const vector<string> &words);
 };
 
 class InferenceManager
 {
 	public:
-		vector<ODInference *> vec;
+		vector<unique_ptr<ODInference>> vec;
 		vector<ODInference *> defaultVec;
-		int m_defaultCount;
+		size_t m_defaultCount;
+		mutex m_mutex;
 
 	public:
 		InferenceManager();
 		virtual ~InferenceManager();
 
 	public:
-		void add(ODInference *od);
-		ODInference *findOd(string name);
-		ODInference *getDefault();
+		void add(unique_ptr<ODInference> od);
+		ODInference *findOd(const string &name);
 };
 
 InferenceManager::InferenceManager()
@@ -93,39 +97,41 @@ InferenceManager::~InferenceManager()
 {
 }
 
-void InferenceManager::add(ODInference *od)
+void InferenceManager::add(unique_ptr<ODInference> od)
 {
-	vec.push_back(od);
-	if (od->isDefault()) {
-		defaultVec.push_back(od);
+	ODInference *raw = od.get();
+	vec.push_back(std::move(od));
+	if (raw->isDefault()) {
+		defaultVec.push_back(raw);
 	}
 }
 
-ODInference *InferenceManager::findOd(string name)
+ODInference *InferenceManager::findOd(const string &name)
 {
+	lock_guard<mutex> lock(m_mutex);
 	if (vec.size()>=1) {
 		if (name=="default") {
 			if (defaultVec.size() == 0) {
-				return vec[0];
+				return vec[0].get();
 			}
 			ODInference *of = defaultVec[m_defaultCount];
 			m_defaultCount = (m_defaultCount+1) % defaultVec.size();
 			return of;
 		} else {
-			for (int i=0; i<vec.size(); i++) {
-				if (name == vec[i]->getTitle()) {
-					return vec[i];
+			for (size_t i=0; i<vec.size(); i++) {
+				if (name == vec[i]->getModelName() || name == vec[i]->getTitle()) {
+					return vec[i].get();
 				}
 			}
 		}
 	}
 
-	return NULL;
+	return nullptr;
 }
 
 ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	int score, int iou, string modelName,
-	int numCategory, vector<string> &words)
+	int numCategory, const vector<string> &words)
 {
 	kModelName = modelName;
 	kTitle = title;
@@ -138,22 +144,23 @@ ODInference::ODInference(string title, int iWidth, int iHeight, int iNumCh,
 	kCategoryCount = numCategory;
 	kCategoryLabels = words;
 	kDefault = false;
-	pthread_mutex_init(&m_mutex, NULL);
 }
 
 ODInference::~ODInference()
 {
-	pthread_mutex_destroy(&m_mutex); 
 }
 
-string ODInference::getClassName(int classId)
+string ODInference::getClassName(int classId) const
 {
+	if (classId < 0 || classId >= static_cast<int>(kCategoryLabels.size())) {
+		return "unknown";
+	}
 	return string(kCategoryLabels[classId]);
 }
 
 MobileNetSSD::MobileNetSSD(string title, int iWidth, int iHeight, int iNumCh,
 	int score, int iou,
-	string modelName, int numCategory,  vector<string> &labels):
+	string modelName, int numCategory, const vector<string> &labels):
 	ODInference(title, iWidth, iHeight, iNumCh, score, iou, 
 		modelName, numCategory, labels)
 {
@@ -169,16 +176,18 @@ void ODInference::modelSetup()
 	model = tflite::FlatBufferModel::BuildFromFile(filename.c_str());
 
 	if ( !model ) {
-		clog << "failed to mmap model" << endl;
-		exit(0);
+		throw runtime_error("failed to mmap model: " + filename);
 	}
 
 	tflite::InterpreterBuilder(*model.get(), resolver)(&interpreter);
+	if (!interpreter) {
+		throw runtime_error("failed to build interpreter: " + filename);
+	}
 
 	TfLiteStatus allocate_status = interpreter->AllocateTensors();
 	if (allocate_status != kTfLiteOk) {
 		TF_LITE_REPORT_ERROR(error_reporter, "AllocateTensors() failed");
-		exit(0);
+		throw runtime_error("AllocateTensors() failed: " + filename);
 	}
 }
 
@@ -362,7 +371,7 @@ string ODInference::detect(Mat &img, const string &output,
 	}
 	cvtColor(dstImg, dstImg, COLOR_BGR2RGB);
 
-	pthread_mutex_lock(&m_mutex);
+	lock_guard<mutex> lock(m_mutex);
 	int8_t *int8_data = 0;
 	uint8_t *uint8_data = 0;
 	float_t *float_data = 0;
@@ -383,16 +392,22 @@ string ODInference::detect(Mat &img, const string &output,
 		while (count-->0) {
 			*float_data++ = ((float)(*in++)) / 256.0;
 		}
+	} else {
+		throw runtime_error("unsupported input tensor type");
 	}
 
-	interpreter->Invoke();
+	TfLiteStatus invoke_status = interpreter->Invoke();
+	if (invoke_status != kTfLiteOk) {
+		throw runtime_error("interpreter invoke failed");
+	}
 
 	int numOutputTensor = interpreter->outputs().size();
 	if (numOutputTensor != 4) {
-		// TODO: error here
+		throw runtime_error("unexpected output tensor count: " + to_string(numOutputTensor));
 	}
 
-	int numBoxes, numClasses;
+	int numBoxes = 0;
+	int numClasses = 0;
 	NmsPostProcess nms;
 	if (kPostProcess == "yolo") {
 		for (int i=0; i<numOutputTensor; i++) {
@@ -448,11 +463,13 @@ string ODInference::detect(Mat &img, const string &output,
 	nms.Go(kIouThreshold, nmsCall); // overlay threshold
 	string json = nmsCall.packJson();
 
-	auto rc = imwrite(output, outputImg);
+	bool rc = imwrite(output, outputImg);
+	if (!rc) {
+		throw runtime_error("failed to write output image: " + output);
+	}
 	clog << "output: " << output << endl;
 	width = outputImg.cols;
 	height = outputImg.rows;
-	pthread_mutex_unlock(&m_mutex);
 
 	return json;
 }
@@ -491,8 +508,8 @@ class NameCGI : public ODCGI
 		int run(QueryString &qs, ostream &os);
 };
 
-void _returnValue(string title, int width, int height, int score, int iou,
-	string &modelName, string &result, int ms, ostream &os)
+void _returnValue(const string &title, int width, int height, int score, int iou,
+	const string &modelName, const string &result, int ms, ostream &os)
 {
 	os << "{\"status\":\"ok\", \"elapsed_time\":" << ms 
 	   << ",\"title\":\"" << title << "\""
@@ -514,80 +531,86 @@ void _returnFail(const char *reason, ostream &os)
 
 int DetectCGI::run(QueryString &qs, ostream &os)
 {
-	float x_left = 0.0, x_right = 0.0, y_top = 0.0, y_bottom = 0.0;
+	CropRatios ratios;
 
-    os << "Content-Type: application/json" << endl << endl;
-	if (qs.numParams()>=1) {
-		if (qs.hasParam("input") && qs.hasParam("output")) {
-			auto pi = qs.getParam("input");
-			Mat img = imread(pi->firstValue());
-			clog << "input: " << pi->firstValue() << endl;
-			if (!img.data) {
-				returnFail("error: canot read file", os, -1);
-			}
-			auto po = qs.getParam("output");
-			int start = get_current_ticks();
-			string modelName = "default";
-			if (qs.hasParam("model")) {
-				auto pi = qs.getParam("model");
-				modelName = pi->firstValue();
-			}
-			if (qs.hasParam("x_left")) {
-				auto pi = qs.getParam("x_left");
-				string sx_left = pi->firstValue();
-				x_left = stof(sx_left);
-			}
-			if (qs.hasParam("x_right")) {
-				auto pi = qs.getParam("x_right");
-				string sx_right = pi->firstValue();
-				x_right = stof(sx_right);
-			}
-			if (qs.hasParam("y_top")) {
-				auto pi = qs.getParam("y_top");
-				string sy_top = pi->firstValue();
-				y_top = stof(sy_top);
-			}
-			if (qs.hasParam("y_bottom")) {
-				auto pi = qs.getParam("y_bottom");
-				string sy_bottom = pi->firstValue();
-				y_bottom = stof(sy_bottom);
-			}
-
-			int rectW = img.cols * (1.0-x_left-x_right);
-			int rectH = img.rows * (1.0-y_top-y_bottom);
-
-			// keep width and height are both even
-			if (rectW%2 != 0) rectW--;
-			if (rectH%2 != 0) rectH--;
-			Rect cropRect(img.cols * x_left, img.rows * y_top, rectW, rectH);
-			img = Mat(img, cropRect);
-			ODInference *infEngine = m_im->findOd(modelName);
-			if (infEngine) {
-				int width = 0, height = 0;
-				string result = infEngine->detect(img, po->firstValue(), width, height);
-				returnValue(infEngine->getTitle(), width, height,
-					infEngine->getScore(), infEngine->getIou(),
-					infEngine->getModelName(), result, get_current_ticks() - start, os, 0);
-			}
-			// engine not found, fallback to default
-			infEngine = m_im->findOd(string("default"));
-			if (infEngine) {
-				int width = 0, height = 0;
-				string result = infEngine->detect(img, po->firstValue(), width, height);
-				returnValue(infEngine->getTitle(), width, height,
-					infEngine->getScore(), infEngine->getIou(),
-					infEngine->getModelName(), result, get_current_ticks() - start, os, 0);
-			}
-			returnFail("inference engine not found", os, -1);
-		} else {
+	os << "Content-Type: application/json" << endl << endl;
+	try {
+		if (qs.numParams() < 1) {
+			returnFail("error: no parameter", os, -1);
+		}
+		if (!qs.hasParam("input") || !qs.hasParam("output")) {
 			returnFail("need input and output parameter", os, -1);
 		}
-	} else {
-		returnFail("error: no parameter", os, -1);
+
+		auto pi = qs.getParam("input");
+		auto po = qs.getParam("output");
+		Mat img = imread(pi->firstValue());
+		clog << "input: " << pi->firstValue() << endl;
+		if (!img.data) {
+			returnFail("error: canot read file", os, -1);
+		}
+
+		int start = get_current_ticks();
+		string modelName = "default";
+		if (qs.hasParam("model")) {
+			auto pm = qs.getParam("model");
+			modelName = pm->firstValue();
+		}
+
+		if (qs.hasParam("x_left")) {
+			auto px = qs.getParam("x_left");
+			if (!parseCropRatio(px->firstValue(), ratios.x_left)) {
+				returnFail("error: invalid x_left", os, -1);
+			}
+		}
+		if (qs.hasParam("x_right")) {
+			auto px = qs.getParam("x_right");
+			if (!parseCropRatio(px->firstValue(), ratios.x_right)) {
+				returnFail("error: invalid x_right", os, -1);
+			}
+		}
+		if (qs.hasParam("y_top")) {
+			auto py = qs.getParam("y_top");
+			if (!parseCropRatio(py->firstValue(), ratios.y_top)) {
+				returnFail("error: invalid y_top", os, -1);
+			}
+		}
+		if (qs.hasParam("y_bottom")) {
+			auto py = qs.getParam("y_bottom");
+			if (!parseCropRatio(py->firstValue(), ratios.y_bottom)) {
+				returnFail("error: invalid y_bottom", os, -1);
+			}
+		}
+
+		int cropX = 0;
+		int cropY = 0;
+		int cropW = 0;
+		int cropH = 0;
+		string cropError;
+		if (!computeCropRect(img.cols, img.rows, ratios, cropX, cropY, cropW, cropH, cropError)) {
+			_returnFail(cropError.c_str(), os);
+			return -1;
+		}
+		img = Mat(img, Rect(cropX, cropY, cropW, cropH));
+
+		ODInference *infEngine = m_im->findOd(modelName);
+		if (!infEngine) {
+			infEngine = m_im->findOd(string("default"));
+		}
+		if (!infEngine) {
+			returnFail("inference engine not found", os, -1);
+		}
+
+		int width = 0;
+		int height = 0;
+		string result = infEngine->detect(img, po->firstValue(), width, height);
+		returnValue(infEngine->getTitle(), width, height,
+			infEngine->getScore(), infEngine->getIou(),
+			infEngine->getModelName(), result, get_current_ticks() - start, os, 0);
+	} catch (const exception &e) {
+		_returnFail(e.what(), os);
 		return -1;
 	}
-
-    return 0;
 }
 
 int NameCGI::run(QueryString &qs, ostream &os)
@@ -595,8 +618,8 @@ int NameCGI::run(QueryString &qs, ostream &os)
     os << "Content-Type: application/json" << endl << endl;
 
 	os << "[";
-	for (int i=0; i<m_im->vec.size(); i++) {
-		os << "\"" << m_im->vec[i]->getTitle() << "\"";
+	for (size_t i=0; i<m_im->vec.size(); i++) {
+		os << "\"" << m_im->vec[i]->getModelName() << "\"";
 		if (i<m_im->vec.size()-1) {
 			os << ",";
 		}
@@ -645,21 +668,26 @@ int main(int argc, char **argv)
 			continue;
 		}
 
-		MobileNetSSD *ssd = new MobileNetSSD(title, width, height, channels,
-			score, iou, *it, words.size(), words);
-		if (isDefault)
-			ssd->setDefault();
+		try {
+			unique_ptr<ODInference> ssd(new MobileNetSSD(title, width, height, channels,
+				score, iou, *it, words.size(), words));
+			if (isDefault) {
+				ssd->setDefault();
+			}
 
-		for_each(post.begin(), post.end(), [](char & c) {
-			c = ::tolower(c);
-		});
-		ssd->setPostProcess(post);
-		im.add(ssd);
-		clog << "load model: " << *it;
-		if (isDefault) {
-			clog << " (default)";
+			for_each(post.begin(), post.end(), [](char & c) {
+				c = ::tolower(c);
+			});
+			ssd->setPostProcess(post);
+			im.add(std::move(ssd));
+			clog << "load model: " << *it;
+			if (isDefault) {
+				clog << " (default)";
+			}
+			clog << endl;
+		} catch (const exception &e) {
+			clog << "fail in loading model [" << *it << "]: " << e.what() << endl;
 		}
-		clog << endl;
 	}
 
     DetectCGI detectCGI(&im);
@@ -672,4 +700,3 @@ int main(int argc, char **argv)
 
 	return 0;
 }
-

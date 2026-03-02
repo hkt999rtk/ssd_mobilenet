@@ -49,3 +49,12 @@ Thumbs.db
 *.wmv
 
 build/
+
+# Prebuilt static libs (should be provisioned externally)
+libs/*.a
+
+# Training/checkpoint artifacts (runtime only needs model.tflite)
+deploy/*/*.pb
+deploy/*/*.pbtxt
+deploy/*/*ckpt*
+deploy/*/checkpoint

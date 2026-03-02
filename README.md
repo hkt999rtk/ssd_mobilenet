@@ -13,6 +13,7 @@
 - `models.ini`：模型清單與推論參數設定
 - `deploy/`：模型資料夾（每個模型一個子資料夾，內含 `model.tflite`）
 - `libs/`：靜態函式庫（TensorFlow Lite 與相依套件）
+- `tinyhttpd/`：HTTP CGI 服務實作（建置 server 時需要）
 - `ssd_mobilenet_v3.service`：systemd 服務檔
 - `Makefile`：部署與服務控制指令
 
@@ -33,6 +34,14 @@ mkdir -p build
 cd build
 cmake ..
 cmake --build . -j
+```
+
+如果目前只要跑測試（不建置 HTTP server）：
+
+```bash
+cmake -S . -B build -DBUILD_SERVER=OFF
+cmake --build build -j
+(cd build && ctest --output-on-failure)
 ```
 
 建置完成後執行檔為：
@@ -61,6 +70,8 @@ cmake --build . -j
 curl "http://127.0.0.1:8110/model_list"
 ```
 
+回傳值為 `models.ini` section 名稱（可直接當作 `model` 參數）。
+
 ### 2) 進行偵測
 
 必要參數：
@@ -82,12 +93,25 @@ curl "http://127.0.0.1:8110/detect?input=/tmp/in.jpg&output=/tmp/out.jpg&model=y
 回傳 JSON 範例欄位：
 
 - `status`
-- `ms`（推論耗時）
+- `elapsed_time`（推論耗時，毫秒）
 - `title`
 - `model`
 - `width` / `height`
 - `score` / `iou`
 - `detection`
+
+## 測試與 Golden Data
+
+目前內建：
+
+- `crop_params_test`：裁切參數解析與邊界驗證
+- `nms_golden_test`：NMS 結果與 golden data 比對
+
+重新產生 NMS golden data：
+
+```bash
+./tests/generate_golden.sh ./build/nms_golden_test ./tests/golden
+```
 
 ## models.ini 說明
 
